@@ -1,0 +1,41 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configura Carburanti Economici",
+        "data": {
+          "source_type": "Tipo sorgente",
+          "source_entity": "Zona o Device Tracker",
+          "radius": "Raggio di ricerca (km)",
+          "num_stations": "Numero di distributori (1-5)",
+          "max_age_days": "Anzianità massima prezzi (giorni, 0 = solo oggi)",
+          "scan_interval": "Intervallo aggiornamento (minuti)",
+          "fuel_benzina": "Benzina",
+          "fuel_diesel": "Diesel (Gasolio)",
+          "GPL": "GPL"
+        }
+      }
+    },
+    "abort": { "no_sources_found": "Nessuna zona o device tracker trovato." },
+    "error": { "no_fuel_selected": "Seleziona almeno un tipo di carburante." }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Modifica Configurazione",
+        "data": {
+          "source_type": "Tipo sorgente",
+          "source_entity": "Zona o Device Tracker",
+          "radius": "Raggio di ricerca (km)",
+          "num_stations": "Numero di distributori (1-5)",
+          "max_age_days": "Anzianità massima prezzi (giorni, 0 = solo oggi)",
+          "scan_interval": "Intervallo aggiornamento (minuti)",
+          "fuel_benzina": "Benzina",
+          "fuel_diesel": "Diesel (Gasolio)",
+          "GPL": "GPL"
+        }
+      }
+    },
+    "error": { "no_fuel_selected": "Seleziona almeno un tipo di carburante." }
+  }
+}

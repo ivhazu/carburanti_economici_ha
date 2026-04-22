@@ -1,0 +1,13 @@
+{
+  "domain": "carburanti_economici",
+  "name": "Carburanti Economici Italia",
+  "version": "1.0.0",
+  "documentation": "https://github.com/ivhazu/carburanti_economici_ha",
+  "issue_tracker": "https://github.com/ivhazu/carburanti_economici_ha/issues",
+  "dependencies": ["http"],
+  "codeowners": ["@ivhazu"],
+  "requirements": [],
+  "iot_class": "cloud_polling",
+  "config_flow": true,
+  "icon": "mdi:gas-station"
+}
