@@ -44,14 +44,52 @@ CARD_URL = f"/{DOMAIN}/carburanti-economici-card.js"
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Register static path for the Lovelace card."""
+    """Register static path and Lovelace resource for the card."""
     if CARD_JS_PATH.exists():
         from homeassistant.components.http import StaticPathConfig
         await hass.http.async_register_static_paths([
             StaticPathConfig(CARD_URL, str(CARD_JS_PATH), cache_headers=False)
         ])
-        _LOGGER.debug("Registered card at %s", CARD_URL)
+        _LOGGER.debug("Registered card static path at %s", CARD_URL)
+
+    # Auto-register as Lovelace resource
+    await _async_register_lovelace_resource(hass)
     return True
+
+
+async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
+    """Add the card JS as a Lovelace resource if not already registered."""
+    try:
+        from homeassistant.components.lovelace import resources as lovelace_resources
+        resource_url = CARD_URL
+
+        # Get current resources
+        resources = hass.data.get("lovelace", {}).get("resources")
+        if resources is None:
+            # Try via storage
+            from homeassistant.components.lovelace.resources import ResourceStorageCollection
+            store = ResourceStorageCollection(hass)
+            await store.async_load()
+            resources = store
+
+        # Check if already registered
+        existing = [r for r in resources.async_items() if resource_url in r.get("url", "")]
+        if existing:
+            _LOGGER.debug("Lovelace resource already registered: %s", resource_url)
+            return
+
+        # Add resource
+        await resources.async_create_item({
+            "res_type": "module",
+            "url": resource_url,
+        })
+        _LOGGER.info("Auto-registered Lovelace resource: %s", resource_url)
+    except Exception as err:
+        _LOGGER.warning(
+            "Could not auto-register Lovelace resource %s: %s. "
+            "Please add it manually in Settings → Dashboard → Resources.",
+            CARD_URL, err
+        )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
