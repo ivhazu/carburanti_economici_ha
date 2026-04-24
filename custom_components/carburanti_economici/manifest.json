@@ -1,7 +1,7 @@
 {
   "domain": "carburanti_economici",
   "name": "Carburanti Economici Italia",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "documentation": "https://github.com/ivhazu/carburanti_economici_ha",
   "issue_tracker": "https://github.com/ivhazu/carburanti_economici_ha/issues",
   "dependencies": ["http"],
