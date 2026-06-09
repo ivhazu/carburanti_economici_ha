@@ -52,7 +52,6 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         ])
         _LOGGER.debug("Registered card static path at %s", CARD_URL)
 
-    # Auto-register as Lovelace resource
     await _async_register_lovelace_resource(hass)
     return True
 
@@ -60,30 +59,28 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
     """Add the card JS as a Lovelace resource if not already registered."""
     try:
-        from homeassistant.components.lovelace import resources as lovelace_resources
-        resource_url = CARD_URL
-
-        # Get current resources
-        resources = hass.data.get("lovelace", {}).get("resources")
-        if resources is None:
-            # Try via storage
-            from homeassistant.components.lovelace.resources import ResourceStorageCollection
-            store = ResourceStorageCollection(hass)
-            await store.async_load()
-            resources = store
-
-        # Check if already registered
-        existing = [r for r in resources.async_items() if resource_url in r.get("url", "")]
-        if existing:
-            _LOGGER.debug("Lovelace resource already registered: %s", resource_url)
+        lovelace_data = hass.data.get("lovelace")
+        if lovelace_data is None:
+            _LOGGER.debug("Lovelace not yet initialized, skipping resource registration")
             return
 
-        # Add resource
+        resources = getattr(lovelace_data, "resources", None)
+        if resources is None:
+            raise ValueError("Could not access lovelace resources")
+
+        await resources.async_load()
+
+        for item in resources.async_items():
+            if CARD_URL in item.get("url", ""):
+                _LOGGER.debug("Lovelace resource already registered: %s", CARD_URL)
+                return
+
         await resources.async_create_item({
             "res_type": "module",
-            "url": resource_url,
+            "url": CARD_URL,
         })
-        _LOGGER.info("Auto-registered Lovelace resource: %s", resource_url)
+        _LOGGER.info("Auto-registered Lovelace resource: %s", CARD_URL)
+
     except Exception as err:
         _LOGGER.warning(
             "Could not auto-register Lovelace resource %s: %s. "
@@ -200,7 +197,8 @@ class CarburantiCoordinator(DataUpdateCoordinator):
                             _LOGGER.debug("Skipping station %s: price too old (%s)",
                                           station_id, metadata.get("insert_date"))
                     if not stations:
-                        _LOGGER.warning("No fresh stations for %s within %d km", fuel_key, self.radius)
+                        _LOGGER.warning("No fresh stations for %s within %d km",
+                                        fuel_key, self.radius)
                     result[fuel_key] = stations
                 except Exception as err:
                     _LOGGER.warning("Error fetching %s: %s", fuel_key, err)
@@ -215,8 +213,10 @@ class CarburantiCoordinator(DataUpdateCoordinator):
             "priceOrder": "asc",
         }
         async with async_timeout(60):
-            async with session.post(API_SEARCH_URL, json=payload,
-                                    headers={"Content-Type": "application/json"}) as resp:
+            async with session.post(
+                API_SEARCH_URL, json=payload,
+                headers={"Content-Type": "application/json"}
+            ) as resp:
                 resp.raise_for_status()
                 data = await resp.json()
         results = data.get("results", [])
@@ -242,7 +242,8 @@ class CarburantiCoordinator(DataUpdateCoordinator):
         insert_date = None
         for is_self in (True, False):
             match = next(
-                (f for f in fuels if f.get("name") == fuel_name and f.get("isSelf") is is_self),
+                (f for f in fuels
+                 if f.get("name") == fuel_name and f.get("isSelf") is is_self),
                 None,
             )
             if match:

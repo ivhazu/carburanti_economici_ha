@@ -30,7 +30,7 @@
 - 🕒 **Intervallo aggiornamento configurabile** — da 15 minuti a 24 ore
 - 📅 **Filtro per anzianità prezzi** — escludi distributori con prezzi non aggiornati da troppo tempo (0 = solo oggi)
 - 🔄 **Pulsante aggiornamento manuale** — forza il refresh dei dati in qualsiasi momento
-- 🗺️ **Card Lovelace integrata** — mappa con pin numerati + lista prezzi, registrata automaticamente senza configurazione manuale
+- 🗺️ **Card Lovelace integrata** — mappa con pin numerati + lista prezzi, registrata automaticamente
 - 🔧 **Configurazione UI** — nessun YAML da scrivere, tutto configurabile dalla UI grafica di HA
 
 ---
@@ -65,7 +65,14 @@ Viene inoltre creato un **pulsante** per ogni istanza:
 
 ## 🗺️ Card Lovelace
 
-La card viene **registrata automaticamente** all'avvio dell'integrazione — nessun file da copiare in `www/`, nessuna risorsa da aggiungere manualmente (eccetto la prima volta, vedi installazione).
+L'integrazione tenta di **registrare automaticamente** la card Lovelace all'avvio.
+
+> ⚠️ **Se la card non appare nella lista delle schede disponibili**, aggiungila manualmente:
+> 1. Vai in **Impostazioni → Dashboard → Risorse**
+> 2. Clicca **+ Aggiungi risorsa**
+> 3. URL: `/carburanti_economici/carburanti-economici-card.js`
+> 4. Tipo: **Modulo JavaScript**
+> 5. Salva e fai `Ctrl+Shift+R`
 
 La card mostra:
 - 🇮🇹 Intestazione con bandiera italiana, nome zona/tracker e tipo carburante
@@ -95,28 +102,22 @@ L'editor grafico è disponibile direttamente dalla UI di HA.
 3. Aggiungi `https://github.com/ivhazu/carburanti_economici_ha` come tipo **Integrazione**
 4. Cerca **Carburanti Economici Italia** e clicca **Scarica**
 5. Riavvia Home Assistant
-6. Vai in **Impostazioni → Dashboard → Risorse** e aggiungi:
-   - URL: `/carburanti_economici/carburanti-economici-card.js`
-   - Tipo: **Modulo JavaScript**
-7. Riavvia la pagina con `Ctrl+Shift+R`
+6. Vai in **Impostazioni → Dispositivi e Servizi → Aggiungi integrazione** e cerca **Carburanti Economici Italia**
+
+> ⚠️ Se la card Lovelace non viene registrata automaticamente, segui il workaround manuale nella sezione [Card Lovelace](#️-card-lovelace).
 
 ### Installazione manuale
 
 1. Scarica l'ultima release da [GitHub Releases](https://github.com/ivhazu/carburanti_economici_ha/releases)
 2. Estrai e copia la cartella `custom_components/carburanti_economici/` in `config/custom_components/`
 3. Riavvia Home Assistant
-4. Vai in **Impostazioni → Dashboard → Risorse** e aggiungi:
-   - URL: `/carburanti_economici/carburanti-economici-card.js`
-   - Tipo: **Modulo JavaScript**
-5. Riavvia la pagina con `Ctrl+Shift+R`
+4. Vai in **Impostazioni → Dispositivi e Servizi → Aggiungi integrazione** e cerca **Carburanti Economici Italia**
+
+> ⚠️ Se la card Lovelace non viene registrata automaticamente, segui il workaround manuale nella sezione [Card Lovelace](#️-card-lovelace).
 
 ---
 
 ## ⚙️ Configurazione
-
-1. Vai in **Impostazioni → Dispositivi e Servizi → Aggiungi integrazione**
-2. Cerca **Carburanti Economici Italia**
-3. Configura:
 
 | Campo | Descrizione | Default |
 |-------|-------------|---------|
@@ -144,8 +145,8 @@ Puoi aggiungere **più istanze** per monitorare zone o veicoli diversi.
 
 ## 🐛 Problemi noti
 
-- I prezzi mostrati dipendono dalla frequenza di aggiornamento dei gestori. Alcuni distributori potrebbero avere prezzi non aggiornati — usa il filtro **anzianità prezzi** per escluderli.
-- La card Lovelace richiede la registrazione manuale della risorsa JS (solo al primo avvio, una volta sola).
+- I prezzi mostrati dipendono dalla frequenza di aggiornamento dei gestori — usa il filtro **anzianità prezzi** per escludere prezzi vecchi.
+- La registrazione automatica della card Lovelace potrebbe non funzionare su alcune versioni di HA — segui il workaround manuale nella sezione [Card Lovelace](#️-card-lovelace).
 
 ---
 
