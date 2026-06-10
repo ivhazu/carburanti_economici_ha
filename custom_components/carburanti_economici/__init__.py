@@ -1,9 +1,10 @@
 """Carburanti Economici Italia integration."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 
 import aiohttp
@@ -16,24 +17,32 @@ else:
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
+    API_CALL_DELAY,
     API_REGISTRY_URL,
     API_SEARCH_URL,
     CONF_FUEL_TYPES,
     CONF_MAX_AGE_DAYS,
     CONF_NUM_STATIONS,
     CONF_RADIUS,
-    CONF_SCAN_INTERVAL,
     CONF_SOURCE_ENTITY,
     CONF_SOURCE_TYPE,
+    CONF_UPDATE_DAYS,
+    CONF_UPDATE_MODE,
+    CONF_UPDATE_TIME,
     DEFAULT_MAX_AGE_DAYS,
     DEFAULT_NUM_STATIONS,
-    DEFAULT_SCAN_INTERVAL,
+    DEFAULT_UPDATE_DAYS,
+    DEFAULT_UPDATE_MODE,
+    DEFAULT_UPDATE_TIME,
     DOMAIN,
     FUEL_TYPES,
     SOURCE_TYPE_TRACKER,
+    UPDATE_MODE_MANUAL,
+    UPDATE_MODE_SCHEDULED,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -44,14 +53,13 @@ CARD_URL = f"/{DOMAIN}/carburanti-economici-card.js"
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Register static path and Lovelace resource for the card."""
+    """Register static path for the card."""
     if CARD_JS_PATH.exists():
         from homeassistant.components.http import StaticPathConfig
         await hass.http.async_register_static_paths([
             StaticPathConfig(CARD_URL, str(CARD_JS_PATH), cache_headers=False)
         ])
         _LOGGER.debug("Registered card static path at %s", CARD_URL)
-
     return True
 
 
@@ -94,13 +102,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    # Register Lovelace resource here — HA is fully initialized
     await _async_register_lovelace_resource(hass)
+
+    # Schedule daily update if mode is scheduled
+    coordinator.async_setup_schedule()
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    coordinator: CarburantiCoordinator = hass.data[DOMAIN].get(entry.entry_id)
+    if coordinator:
+        coordinator.async_cancel_schedule()
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
@@ -112,11 +125,61 @@ class CarburantiCoordinator(DataUpdateCoordinator):
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.entry = entry
-        scan_interval = entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        self._unsub_schedule = None
+        self._last_update_date: datetime | None = None
+
+        # No automatic update_interval — we handle scheduling manually
         super().__init__(
             hass, _LOGGER, name=DOMAIN,
-            update_interval=timedelta(seconds=scan_interval),
+            update_interval=None,
         )
+
+    def async_setup_schedule(self) -> None:
+        """Set up the daily scheduled update if mode is scheduled."""
+        if self.update_mode == UPDATE_MODE_MANUAL:
+            _LOGGER.debug("Manual update mode — no schedule set")
+            return
+
+        update_time = self.entry.data.get(CONF_UPDATE_TIME, DEFAULT_UPDATE_TIME)
+        try:
+            t = time.fromisoformat(update_time)
+        except ValueError:
+            t = time(7, 0)
+
+        _LOGGER.debug("Scheduling daily update at %s", t)
+        self._unsub_schedule = async_track_time_change(
+            self.hass,
+            self._async_scheduled_update,
+            hour=t.hour,
+            minute=t.minute,
+            second=0,
+        )
+
+    def async_cancel_schedule(self) -> None:
+        """Cancel the scheduled update."""
+        if self._unsub_schedule:
+            self._unsub_schedule()
+            self._unsub_schedule = None
+
+    async def _async_scheduled_update(self, now: datetime) -> None:
+        """Called by time tracker — check if we should update today."""
+        update_days = self.entry.data.get(CONF_UPDATE_DAYS, DEFAULT_UPDATE_DAYS)
+        if update_days > 1 and self._last_update_date is not None:
+            days_since = (now.date() - self._last_update_date.date()).days
+            if days_since < update_days:
+                _LOGGER.debug(
+                    "Skipping update: only %d days since last update (every %d days)",
+                    days_since, update_days
+                )
+                return
+
+        _LOGGER.debug("Scheduled update triggered at %s", now)
+        self._last_update_date = now
+        await self.async_request_refresh()
+
+    @property
+    def update_mode(self) -> str:
+        return self.entry.data.get(CONF_UPDATE_MODE, DEFAULT_UPDATE_MODE)
 
     @property
     def source_entity(self) -> str:
@@ -177,9 +240,13 @@ class CarburantiCoordinator(DataUpdateCoordinator):
 
         result = {}
         async with aiohttp.ClientSession() as session:
-            for fuel_key in self.fuel_types:
+            for fuel_idx, fuel_key in enumerate(self.fuel_types):
                 fuel_info = FUEL_TYPES[fuel_key]
                 try:
+                    # Delay between fuel types
+                    if fuel_idx > 0:
+                        await asyncio.sleep(API_CALL_DELAY)
+
                     station_tuples = await self._fetch_sorted_ids(
                         session, lat, lng, fuel_info["api_code"]
                     )
@@ -187,6 +254,9 @@ class CarburantiCoordinator(DataUpdateCoordinator):
                     for station_id, s_lat, s_lng in station_tuples:
                         if len(stations) >= self.num_stations:
                             break
+                        # Delay between registry calls
+                        if stations:
+                            await asyncio.sleep(API_CALL_DELAY)
                         metadata = await self._fetch_station_metadata(
                             session, station_id, fuel_info["fuel_name_api"]
                         )

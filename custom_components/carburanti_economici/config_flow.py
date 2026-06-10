@@ -7,18 +7,23 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.selector import (
     NumberSelector, NumberSelectorConfig, NumberSelectorMode,
     SelectOptionDict, SelectSelector, SelectSelectorConfig, SelectSelectorMode,
+    TextSelector, TextSelectorConfig, TextSelectorType,
+    BooleanSelector,
 )
 
 from .const import (
     CONF_FUEL_TYPES, CONF_MAX_AGE_DAYS, CONF_NUM_STATIONS,
-    CONF_RADIUS, CONF_SCAN_INTERVAL, CONF_SOURCE_ENTITY, CONF_SOURCE_TYPE,
-    DEFAULT_MAX_AGE_DAYS, DEFAULT_NUM_STATIONS, DEFAULT_RADIUS, DEFAULT_SCAN_INTERVAL,
+    CONF_RADIUS, CONF_SOURCE_ENTITY, CONF_SOURCE_TYPE,
+    CONF_UPDATE_DAYS, CONF_UPDATE_MODE, CONF_UPDATE_TIME,
+    DEFAULT_MAX_AGE_DAYS, DEFAULT_NUM_STATIONS, DEFAULT_RADIUS,
+    DEFAULT_UPDATE_DAYS, DEFAULT_UPDATE_MODE, DEFAULT_UPDATE_TIME,
     DOMAIN, FUEL_BENZINA, FUEL_DIESEL, FUEL_GPL, FUEL_TYPES,
     SOURCE_TYPE_TRACKER, SOURCE_TYPE_ZONE,
+    UPDATE_MODE_MANUAL, UPDATE_MODE_SCHEDULED,
 )
 
 
-def _get_zone_options(hass):
+def _get_zone_options(hass: HomeAssistant) -> list[SelectOptionDict]:
     opts = []
     for eid in hass.states.async_entity_ids("zone"):
         s = hass.states.get(eid)
@@ -27,7 +32,7 @@ def _get_zone_options(hass):
     return sorted(opts, key=lambda x: x["label"])
 
 
-def _get_tracker_options(hass):
+def _get_tracker_options(hass: HomeAssistant) -> list[SelectOptionDict]:
     opts = []
     for eid in hass.states.async_entity_ids("device_tracker"):
         s = hass.states.get(eid)
@@ -36,10 +41,11 @@ def _get_tracker_options(hass):
     return sorted(opts, key=lambda x: x["label"])
 
 
-def _build_schema(hass, defaults=None):
+def _build_schema(hass: HomeAssistant, defaults: dict | None = None) -> vol.Schema:
     d = defaults or {}
     all_sources = _get_zone_options(hass) + _get_tracker_options(hass)
     default_entity = d.get(CONF_SOURCE_ENTITY) or (all_sources[0]["value"] if all_sources else None)
+    update_mode = d.get(CONF_UPDATE_MODE, DEFAULT_UPDATE_MODE)
 
     return vol.Schema({
         vol.Required(CONF_SOURCE_TYPE, default=d.get(CONF_SOURCE_TYPE, SOURCE_TYPE_ZONE)):
@@ -55,15 +61,22 @@ def _build_schema(hass, defaults=None):
             NumberSelector(NumberSelectorConfig(min=1, max=5, step=1, mode=NumberSelectorMode.BOX)),
         vol.Required(CONF_MAX_AGE_DAYS, default=d.get(CONF_MAX_AGE_DAYS, DEFAULT_MAX_AGE_DAYS)):
             NumberSelector(NumberSelectorConfig(min=0, max=90, step=1, mode=NumberSelectorMode.BOX)),
-        vol.Required(CONF_SCAN_INTERVAL, default=d.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL) // 60):
-            NumberSelector(NumberSelectorConfig(min=15, max=1440, step=15, mode=NumberSelectorMode.BOX)),
+        vol.Required(CONF_UPDATE_MODE, default=update_mode):
+            SelectSelector(SelectSelectorConfig(options=[
+                SelectOptionDict(value=UPDATE_MODE_SCHEDULED, label="Aggiornamento automatico giornaliero"),
+                SelectOptionDict(value=UPDATE_MODE_MANUAL, label="Solo aggiornamento manuale"),
+            ], mode=SelectSelectorMode.DROPDOWN)),
+        vol.Optional(CONF_UPDATE_TIME, default=d.get(CONF_UPDATE_TIME, DEFAULT_UPDATE_TIME)):
+            TextSelector(TextSelectorConfig(type=TextSelectorType.TIME)),
+        vol.Optional(CONF_UPDATE_DAYS, default=d.get(CONF_UPDATE_DAYS, DEFAULT_UPDATE_DAYS)):
+            NumberSelector(NumberSelectorConfig(min=1, max=30, step=1, mode=NumberSelectorMode.BOX)),
         vol.Optional("fuel_benzina", default=d.get("fuel_benzina", True)): bool,
         vol.Optional("fuel_diesel", default=d.get("fuel_diesel", True)): bool,
         vol.Optional("GPL", default=d.get("GPL", False)): bool,
     })
 
 
-def _extract(user_input):
+def _extract(user_input: dict) -> dict:
     fuels = []
     if user_input.get("fuel_benzina"): fuels.append(FUEL_BENZINA)
     if user_input.get("fuel_diesel"): fuels.append(FUEL_DIESEL)
@@ -74,7 +87,9 @@ def _extract(user_input):
         CONF_RADIUS: int(user_input[CONF_RADIUS]),
         CONF_NUM_STATIONS: int(user_input[CONF_NUM_STATIONS]),
         CONF_MAX_AGE_DAYS: int(user_input[CONF_MAX_AGE_DAYS]),
-        CONF_SCAN_INTERVAL: int(user_input[CONF_SCAN_INTERVAL]) * 60,
+        CONF_UPDATE_MODE: user_input[CONF_UPDATE_MODE],
+        CONF_UPDATE_TIME: user_input.get(CONF_UPDATE_TIME, DEFAULT_UPDATE_TIME),
+        CONF_UPDATE_DAYS: int(user_input.get(CONF_UPDATE_DAYS, DEFAULT_UPDATE_DAYS)),
         CONF_FUEL_TYPES: fuels,
     }
 
@@ -131,7 +146,9 @@ class CarburantiOptionsFlow(config_entries.OptionsFlow):
             CONF_RADIUS: d.get(CONF_RADIUS, DEFAULT_RADIUS),
             CONF_NUM_STATIONS: d.get(CONF_NUM_STATIONS, DEFAULT_NUM_STATIONS),
             CONF_MAX_AGE_DAYS: d.get(CONF_MAX_AGE_DAYS, DEFAULT_MAX_AGE_DAYS),
-            CONF_SCAN_INTERVAL: d.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+            CONF_UPDATE_MODE: d.get(CONF_UPDATE_MODE, DEFAULT_UPDATE_MODE),
+            CONF_UPDATE_TIME: d.get(CONF_UPDATE_TIME, DEFAULT_UPDATE_TIME),
+            CONF_UPDATE_DAYS: d.get(CONF_UPDATE_DAYS, DEFAULT_UPDATE_DAYS),
             "fuel_benzina": FUEL_BENZINA in current_fuels,
             "fuel_diesel": FUEL_DIESEL in current_fuels,
             "GPL": FUEL_GPL in current_fuels,

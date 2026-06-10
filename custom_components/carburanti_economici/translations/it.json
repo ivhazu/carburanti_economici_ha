@@ -9,7 +9,9 @@
           "radius": "Raggio di ricerca (km)",
           "num_stations": "Numero di distributori (1-5)",
           "max_age_days": "Anzianità massima prezzi (giorni, 0 = solo oggi)",
-          "scan_interval": "Intervallo aggiornamento (minuti)",
+          "update_mode": "Modalità aggiornamento",
+          "update_time": "Orario aggiornamento giornaliero (HH:MM)",
+          "update_days": "Aggiorna ogni quanti giorni",
           "fuel_benzina": "Benzina",
           "fuel_diesel": "Diesel (Gasolio)",
           "GPL": "GPL"
@@ -29,7 +31,9 @@
           "radius": "Raggio di ricerca (km)",
           "num_stations": "Numero di distributori (1-5)",
           "max_age_days": "Anzianità massima prezzi (giorni, 0 = solo oggi)",
-          "scan_interval": "Intervallo aggiornamento (minuti)",
+          "update_mode": "Modalità aggiornamento",
+          "update_time": "Orario aggiornamento giornaliero (HH:MM)",
+          "update_days": "Aggiorna ogni quanti giorni",
           "fuel_benzina": "Benzina",
           "fuel_diesel": "Diesel (Gasolio)",
           "GPL": "GPL"

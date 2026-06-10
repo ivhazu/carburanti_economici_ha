@@ -13,9 +13,9 @@
 
 ## 📸 Screenshot
 
-| Configurazione | Card Lovelace |
-|:-:|:-:|
-| ![Configurazione](images/screenshot_config.png) | ![Card](images/screenshot_card.png) |
+| Configurazione (1/2) | Configurazione (2/2) | Card Lovelace |
+|:-:|:-:|:-:|
+| ![Config 1](images/screenshot_config.png) | ![Config 2](images/screenshot_config2.png) | ![Card](images/screenshot_card.png) |
 
 *Interfaccia di configurazione UI e card Lovelace con mappa e lista distributori.*
 
@@ -27,8 +27,9 @@
 - ⛽ **3 tipi di carburante** — Benzina, Diesel (Gasolio) e GPL, selezionabili individualmente
 - 🏆 **Fino a 5 distributori** — importa i primi N distributori per prezzo, con entity separate per ciascuno
 - 📏 **Raggio configurabile** — da 1 a 50 km
-- 🕒 **Intervallo aggiornamento configurabile** — da 15 minuti a 24 ore
 - 📅 **Filtro per anzianità prezzi** — escludi distributori con prezzi non aggiornati da troppo tempo (0 = solo oggi)
+- 🕒 **Aggiornamento schedulato** — scegli l'orario giornaliero e ogni quanti giorni aggiornare
+- 👆 **Modalità solo manuale** — nessun polling automatico, aggiorna solo tramite il pulsante (ideale per device tracker)
 - 🔄 **Pulsante aggiornamento manuale** — forza il refresh dei dati in qualsiasi momento
 - 🗺️ **Card Lovelace integrata** — mappa con pin numerati + lista prezzi, registrata automaticamente
 - 🔧 **Configurazione UI** — nessun YAML da scrivere, tutto configurabile dalla UI grafica di HA
@@ -126,10 +127,17 @@ L'editor grafico è disponibile direttamente dalla UI di HA.
 | **Raggio (km)** | Raggio di ricerca distributori | 10 |
 | **N° distributori** | Quanti distributori importare (1-5) | 1 |
 | **Anzianità prezzi (giorni)** | Escludi prezzi più vecchi di X giorni (0 = solo oggi) | 7 |
-| **Intervallo aggiornamento (min)** | Frequenza di aggiornamento automatico | 60 |
+| **Modalità aggiornamento** | Automatico giornaliero o solo manuale | Automatico |
+| **Orario aggiornamento** | A che ora aggiornare ogni giorno (es. `07:00`) | `07:00` |
+| **Ogni quanti giorni** | Frequenza aggiornamento automatico | 1 |
 | **Benzina** | Abilita ricerca benzina | ✅ |
 | **Diesel** | Abilita ricerca diesel | ✅ |
 | **GPL** | Abilita ricerca GPL | ❌ |
+
+### Modalità aggiornamento
+
+- **Automatico giornaliero** — i dati vengono aggiornati ogni giorno all'orario configurato. Puoi scegliere anche ogni quanti giorni (es. ogni 2 giorni). Ideale per zone fisse come casa o lavoro.
+- **Solo manuale** — nessun aggiornamento automatico. I dati si aggiornano solo premendo il pulsante `button.aggiorna_carburanti_*`. Ideale per device tracker dove vuoi aggiornare on-demand.
 
 Puoi aggiungere **più istanze** per monitorare zone o veicoli diversi.
 
