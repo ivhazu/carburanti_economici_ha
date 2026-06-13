@@ -1,5 +1,4 @@
-// Carburanti Economici Italia — Lovelace Card v6.0
-// Mushroom-inspired style, no external dependencies
+// Carburanti Economici Italia — Lovelace Card v6.2
 
 const ITALIAN_FLAG_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3 2" width="20" height="14" style="border-radius:2px;vertical-align:middle;margin:0 4px;flex-shrink:0">
   <rect width="1" height="2" fill="#009246"/>
@@ -26,13 +25,15 @@ function friendlyZoneName(hass, zoneSlug) {
   return zoneSlug.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
-function formatDate(iso) {
+function formatDateTime(iso) {
   if (!iso || iso === "unavailable" || iso === "unknown") return null;
-  try { return new Date(iso).toLocaleString("it-IT", {day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}); }
-  catch { return null; }
+  try {
+    return new Date(iso).toLocaleString("it-IT", {
+      day:"2-digit", month:"2-digit", year:"numeric",
+      hour:"2-digit", minute:"2-digit"
+    });
+  } catch { return null; }
 }
-
-// ── Main Card ─────────────────────────────────────────────────────────────────
 
 class CarburantiEconomiciCard extends HTMLElement {
 
@@ -53,6 +54,7 @@ class CarburantiEconomiciCard extends HTMLElement {
       this._render();
     } else {
       this._updateList();
+      this._updateFooter();
       const haMap = this.querySelector("ha-map");
       if (haMap) haMap.hass = this._buildPatchedHass(hass);
     }
@@ -75,16 +77,21 @@ class CarburantiEconomiciCard extends HTMLElement {
         fuel: meta.fuel,
         zone: meta.zone,
         price: priceState.state,
-        name: get("nome")?.state || "—",
         address: addrState?.state || "—",
         brand: get("marchio")?.state || "—",
-        updated: get("aggiornamento")?.state,
+        // last_api_call from rank-1 price sensor attribute
+        lastApiCall: meta.rank === 1 ? priceState.attributes?.last_api_call : null,
         lat: addrState?.attributes?.latitude,
         lng: addrState?.attributes?.longitude,
         entityId: `${base}_indirizzo`,
       });
     }
     return stations.sort((a, b) => a.rank - b.rank);
+  }
+
+  _getLastApiCall() {
+    const stations = this._buildStations();
+    return stations.find(s => s.rank === 1)?.lastApiCall || null;
   }
 
   _buildPatchedHass(hass) {
@@ -106,20 +113,17 @@ class CarburantiEconomiciCard extends HTMLElement {
   }
 
   _stationRowHTML(s) {
-    const isUnavailable = s.price === "unavailable" || s.price === "unknown";
+    const isUnavailable = !s.price || s.price === "unavailable" || s.price === "unknown";
     const priceText = isUnavailable ? "—" : `${s.price} €/L`;
-    const brandText = (isUnavailable || s.brand === "unavailable") ? "—" : s.brand;
-    const addrText = (isUnavailable || s.address === "unavailable") ? "—" : s.address;
-
+    const brandText = (!s.brand || s.brand === "unavailable") ? "—" : s.brand;
+    const addrText = (!s.address || s.address === "unavailable") ? "—" : s.address;
     return `
       <div class="ce-row">
-        <div class="ce-icon">
-          <ha-icon icon="mdi:numeric-${s.rank}-circle"></ha-icon>
-        </div>
+        <div class="ce-icon"><ha-icon icon="mdi:numeric-${s.rank}-circle"></ha-icon></div>
         <div class="ce-content">
           <div class="ce-primary">
             <span class="ce-brand">${brandText}</span>
-            <span class="ce-price ${isUnavailable ? 'ce-unavailable' : ''}">${priceText}</span>
+            <span class="ce-price ${isUnavailable ? 'ce-unavail' : ''}">${priceText}</span>
           </div>
           <div class="ce-secondary">${addrText}</div>
         </div>
@@ -127,12 +131,19 @@ class CarburantiEconomiciCard extends HTMLElement {
   }
 
   _updateList() {
-    const listEl = this.querySelector(".ce-list");
-    if (!listEl || !this._hass) return;
+    const el = this.querySelector(".ce-list");
+    if (!el) return;
     const stations = this._buildStations();
-    listEl.innerHTML = stations.length
+    el.innerHTML = stations.length
       ? stations.map(s => this._stationRowHTML(s)).join("")
       : `<div class="ce-empty">Nessun dato disponibile</div>`;
+  }
+
+  _updateFooter() {
+    const el = this.querySelector(".ce-footer-text");
+    if (!el) return;
+    const ts = this._getLastApiCall();
+    el.textContent = ts ? `Aggiornato: ${formatDateTime(ts)}` : "";
   }
 
   _render() {
@@ -145,9 +156,8 @@ class CarburantiEconomiciCard extends HTMLElement {
     const zoneName = stations[0] ? friendlyZoneName(this._hass, stations[0].zone) : "—";
     const hasCoords = stations.some(s => s.lat && s.lng);
     const zoneSlug = stations[0]?.zone || "";
-
-    // Last update
-    const lastUpdate = stations[0]?.updated ? formatDate(stations[0].updated) : null;
+    const lastApiCall = this._getLastApiCall();
+    const lastUpdate = lastApiCall ? formatDateTime(lastApiCall) : null;
 
     const stationRows = stations.length
       ? stations.map(s => this._stationRowHTML(s)).join("")
@@ -156,181 +166,70 @@ class CarburantiEconomiciCard extends HTMLElement {
     this.innerHTML = `
       <ha-card>
         <style>
-          ha-card {
-            overflow: hidden;
-            font-family: var(--primary-font-family, sans-serif);
-            border-radius: var(--ha-card-border-radius, 12px);
+          ha-card { overflow:hidden; font-family:var(--primary-font-family,sans-serif); border-radius:var(--ha-card-border-radius,12px); }
+          .ce-header { display:flex; align-items:center; gap:8px; padding:14px 16px 10px; }
+          .ce-title { font-size:14px; font-weight:500; color:var(--primary-text-color); flex:1; }
+          .ce-fuel-chip { font-size:11px; font-weight:600; color:var(--secondary-text-color); background:var(--secondary-background-color); border-radius:99px; padding:2px 10px; letter-spacing:0.5px; }
+          .ce-divider { height:1px; background:var(--divider-color); margin:0 16px; }
+          .ce-body { display:grid; grid-template-columns:1fr 1fr; }
+          @media (max-width:500px) {
+            .ce-body { grid-template-columns:1fr; }
+            .ce-map-col { border-top:1px solid var(--divider-color); }
           }
-
-          /* ── Header ── */
-          .ce-header {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 14px 16px 10px;
-          }
-          .ce-title {
-            font-size: 14px;
-            font-weight: 500;
-            color: var(--primary-text-color);
-            flex: 1;
-          }
-          .ce-fuel-chip {
-            font-size: 11px;
-            font-weight: 600;
-            color: var(--secondary-text-color);
-            background: var(--secondary-background-color);
-            border-radius: 99px;
-            padding: 2px 10px;
-            letter-spacing: 0.5px;
-          }
-
-          /* ── Divider ── */
-          .ce-divider {
-            height: 1px;
-            background: var(--divider-color);
-            margin: 0 16px;
-          }
-
-          /* ── Body ── */
-          .ce-body {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-          }
-
-          /* ── Station list ── */
-          .ce-list {
-            padding: 8px;
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            overflow-y: auto;
-            max-height: 320px;
-          }
-          .ce-row {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 8px 10px;
-            border-radius: 10px;
-            background: var(--secondary-background-color);
-            transition: background 0.2s;
-          }
-          .ce-icon {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--primary-text-color);
-            flex-shrink: 0;
-          }
-          .ce-icon ha-icon {
-            --mdi-icon-size: 28px;
-          }
-          .ce-content { flex: 1; min-width: 0; }
-          .ce-primary {
-            display: flex;
-            align-items: baseline;
-            justify-content: space-between;
-            gap: 6px;
-          }
-          .ce-brand {
-            font-size: 13px;
-            font-weight: 500;
-            color: var(--primary-text-color);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-          }
-          .ce-price {
-            font-size: 14px;
-            font-weight: 700;
-            color: var(--primary-text-color);
-            white-space: nowrap;
-            flex-shrink: 0;
-          }
-          .ce-unavailable {
-            color: var(--secondary-text-color);
-            font-weight: 400;
-          }
-          .ce-secondary {
-            font-size: 11px;
-            color: var(--secondary-text-color);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            margin-top: 2px;
-          }
-          .ce-empty {
-            padding: 20px;
-            text-align: center;
-            color: var(--secondary-text-color);
-            font-size: 13px;
-          }
-
-          /* ── Map ── */
-          .ce-map-col { overflow: hidden; border-radius: 0 var(--ha-card-border-radius, 12px) 0 0; }
-          ha-map { height: 320px; width: 100%; display: block; }
-          .ce-no-map {
-            height: 320px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--secondary-text-color);
-            font-size: 12px;
-            background: var(--secondary-background-color);
-          }
-
-          /* ── Footer ── */
-          .ce-footer {
-            padding: 6px 16px 10px;
-            font-size: 11px;
-            color: var(--secondary-text-color);
-            display: flex;
-            align-items: center;
-            gap: 4px;
-          }
-          .ce-footer ha-icon { --mdi-icon-size: 14px; }
+          .ce-list { padding:8px; display:flex; flex-direction:column; gap:4px; overflow-y:auto; max-height:320px; }
+          .ce-row { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px; background:var(--secondary-background-color); }
+          .ce-icon { display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+          .ce-icon ha-icon { --mdi-icon-size:28px; }
+          .ce-content { flex:1; min-width:0; }
+          .ce-primary { display:flex; align-items:baseline; justify-content:space-between; gap:6px; }
+          .ce-brand { font-size:13px; font-weight:500; color:var(--primary-text-color); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+          .ce-price { font-size:14px; font-weight:700; color:var(--primary-text-color); white-space:nowrap; flex-shrink:0; }
+          .ce-unavail { color:var(--secondary-text-color); font-weight:400; }
+          .ce-secondary { font-size:11px; color:var(--secondary-text-color); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+          .ce-empty { padding:20px; text-align:center; color:var(--secondary-text-color); font-size:13px; }
+          .ce-map-col { overflow:hidden; }
+          ha-map { height:320px; width:100%; display:block; }
+          .ce-no-map { height:320px; display:flex; align-items:center; justify-content:center; color:var(--secondary-text-color); font-size:12px; background:var(--secondary-background-color); }
+          .ce-footer { padding:6px 16px 10px; font-size:11px; color:var(--secondary-text-color); display:flex; align-items:center; gap:4px; }
+          .ce-footer ha-icon { --mdi-icon-size:14px; }
         </style>
 
-        <!-- Header -->
         <div class="ce-header">
           ${ITALIAN_FLAG_SVG}
           <span class="ce-title">Carburanti Economici — ${zoneName}</span>
           <span class="ce-fuel-chip">${fuelLabel}</span>
         </div>
         <div class="ce-divider"></div>
-
-        <!-- Body -->
         <div class="ce-body">
           <div class="ce-list">${stationRows}</div>
-          <div class="ce-map-col" id="ce-map-col"></div>
+          <div class="ce-map-col" id="ce-map-col">
+            ${!hasCoords ? `<div class="ce-no-map">📍 Coordinate non disponibili</div>` : ""}
+          </div>
         </div>
-
-        <!-- Footer -->
-        ${lastUpdate ? `
+        ${lastUpdate !== null ? `
         <div class="ce-divider"></div>
         <div class="ce-footer">
           <ha-icon icon="mdi:update"></ha-icon>
-          Aggiornato: ${lastUpdate}
-        </div>` : ""}
+          <span class="ce-footer-text">Aggiornato: ${lastUpdate}</span>
+        </div>` : `<div class="ce-footer"><ha-icon icon="mdi:update"></ha-icon><span class="ce-footer-text"></span></div>`}
       </ha-card>`;
 
-    const col = this.querySelector("#ce-map-col");
-    if (!col) return;
-
-    if (!hasCoords) {
-      col.innerHTML = `<div class="ce-no-map">📍 Coordinate non disponibili</div>`;
-      return;
+    if (hasCoords) {
+      // Use requestAnimationFrame to ensure DOM is ready before mounting map
+      requestAnimationFrame(() => this._mountMap(stations, zoneSlug));
     }
+  }
+
+  _mountMap(stations, zoneSlug) {
+    const col = this.querySelector("#ce-map-col");
+    if (!col || col.querySelector("ha-map")) return; // already mounted
 
     const patchedHass = this._buildPatchedHass(this._hass);
     const entities = [];
 
-    // Zone
     if (patchedHass.states[`zone.${zoneSlug}`]) {
       entities.push({ entity_id: `zone.${zoneSlug}` });
     }
-    // Real device tracker
     const trackerKey = Object.keys(patchedHass.states).find(
       k => k.startsWith("device_tracker.") &&
            !k.startsWith("device_tracker.ce_station_") &&
@@ -338,7 +237,6 @@ class CarburantiEconomiciCard extends HTMLElement {
     );
     if (trackerKey) entities.push({ entity_id: trackerKey });
 
-    // Station pins
     stations.filter(s => s.lat && s.lng).forEach(s => {
       entities.push({ entity_id: `device_tracker.ce_station_${s.rank}` });
     });
@@ -354,14 +252,11 @@ class CarburantiEconomiciCard extends HTMLElement {
 // ── Editor ────────────────────────────────────────────────────────────────────
 
 class CarburantiEconomiciCardEditor extends HTMLElement {
-
   connectedCallback() { if (!this.innerHTML) this._render(); }
-
   setConfig(config) {
     this._config = JSON.parse(JSON.stringify({entities:[], ...config}));
     this._render();
   }
-
   set hass(hass) { this._hass = hass; this._render(); }
 
   _priceEntities() {
@@ -375,7 +270,6 @@ class CarburantiEconomiciCardEditor extends HTMLElement {
     if (!this._config) return;
     const entities = this._config.entities || [];
     const available = this._priceEntities();
-
     const rows = entities.map((eid, idx) => `
       <div class="er">
         <select data-idx="${idx}" class="es">
@@ -433,15 +327,12 @@ class CarburantiEconomiciCardEditor extends HTMLElement {
   }
 }
 
-// ── Registration ──────────────────────────────────────────────────────────────
-
 if (!customElements.get("carburanti-economici-card")) {
   customElements.define("carburanti-economici-card", CarburantiEconomiciCard);
 }
 if (!customElements.get("carburanti-economici-card-editor")) {
   customElements.define("carburanti-economici-card-editor", CarburantiEconomiciCardEditor);
 }
-
 window.customCards = window.customCards || [];
 if (!window.customCards.find(c => c.type === "carburanti-economici-card")) {
   window.customCards.push({

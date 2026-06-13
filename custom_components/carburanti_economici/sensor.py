@@ -110,6 +110,14 @@ class CarburantiPriceSensor(CarburantiBaseSensor):
         data = self._station_data
         return data["price"] if data else None
 
+    @property
+    def extra_state_attributes(self):
+        attrs = {}
+        # Expose last API call timestamp on rank 1 sensors
+        if self._rank == 1 and self.coordinator.last_api_call is not None:
+            attrs["last_api_call"] = self.coordinator.last_api_call.isoformat()
+        return attrs
+
 
 class CarburantiNameSensor(CarburantiBaseSensor):
     def __init__(self, coordinator, entry, fuel_key, source_slug, rank, ordinal, slug_base):

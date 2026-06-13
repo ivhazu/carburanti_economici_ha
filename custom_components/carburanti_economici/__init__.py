@@ -127,11 +127,13 @@ class CarburantiCoordinator(DataUpdateCoordinator):
         self.entry = entry
         self._unsub_schedule = None
         self._last_update_date: datetime | None = None
+        self.last_api_call: datetime | None = None
 
-        # No automatic update_interval — we handle scheduling manually
+        # Use a very long update_interval so async_request_refresh works
+        # Actual scheduling is handled manually via async_track_time_change
         super().__init__(
             hass, _LOGGER, name=DOMAIN,
-            update_interval=None,
+            update_interval=timedelta(days=365),
         )
 
     def async_setup_schedule(self) -> None:
@@ -238,6 +240,7 @@ class CarburantiCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(f"Source '{self.source_entity}' has no coordinates.")
         lat, lng = coords
 
+        self.last_api_call = datetime.now(tz=timezone.utc)
         result = {}
         async with aiohttp.ClientSession() as session:
             for fuel_idx, fuel_key in enumerate(self.fuel_types):
