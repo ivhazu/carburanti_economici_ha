@@ -55,8 +55,10 @@ class CarburantiEconomiciCard extends HTMLElement {
     } else {
       this._updateList();
       this._updateFooter();
-      const haMap = this.querySelector("ha-map");
-      if (haMap) haMap.hass = this._buildPatchedHass(hass);
+      const mapCard = this.querySelector("#ce-map-col")?.firstElementChild;
+      if (mapCard && mapCard.hass !== undefined) {
+        mapCard.hass = hass;
+      }
     }
   }
 
@@ -215,37 +217,48 @@ class CarburantiEconomiciCard extends HTMLElement {
       </ha-card>`;
 
     if (hasCoords) {
-      // Use requestAnimationFrame to ensure DOM is ready before mounting map
       requestAnimationFrame(() => this._mountMap(stations, zoneSlug));
     }
   }
 
-  _mountMap(stations, zoneSlug) {
+  async _mountMap(stations, zoneSlug) {
     const col = this.querySelector("#ce-map-col");
-    if (!col || col.querySelector("ha-map")) return; // already mounted
+    if (!col || col._mapMounted) return;
+    col._mapMounted = true;
 
-    const patchedHass = this._buildPatchedHass(this._hass);
+    // Use real entities only — no fake trackers
+    // Address sensors have latitude/longitude attributes and work with map card
     const entities = [];
-
-    if (patchedHass.states[`zone.${zoneSlug}`]) {
-      entities.push({ entity_id: `zone.${zoneSlug}` });
+    if (this._hass.states[`zone.${zoneSlug}`]) {
+      entities.push({ entity: `zone.${zoneSlug}` });
     }
-    const trackerKey = Object.keys(patchedHass.states).find(
-      k => k.startsWith("device_tracker.") &&
-           !k.startsWith("device_tracker.ce_station_") &&
-           k.includes(zoneSlug)
+    // Real device tracker if source is a tracker
+    const trackerKey = Object.keys(this._hass.states).find(
+      k => k.startsWith("device_tracker.") && k.includes(zoneSlug)
     );
-    if (trackerKey) entities.push({ entity_id: trackerKey });
+    if (trackerKey) entities.push({ entity: trackerKey });
 
+    // Add address sensors directly — they have lat/lng as attributes
     stations.filter(s => s.lat && s.lng).forEach(s => {
-      entities.push({ entity_id: `device_tracker.ce_station_${s.rank}` });
+      entities.push({ entity: s.entityId });
     });
 
-    const haMap = document.createElement("ha-map");
-    haMap.hass = patchedHass;
-    haMap.entities = entities;
-    haMap.zoom = 13;
-    col.appendChild(haMap);
+    try {
+      const helpers = await window.loadCardHelpers();
+      const card = await helpers.createCardElement({
+        type: "map",
+        entities,
+        default_zoom: 13,
+        hours_to_show: 0,
+      });
+      card.hass = this._hass;
+      card.style.cssText = "height:320px;display:block;--ha-card-border-radius:0;--ha-card-box-shadow:none;";
+      col.appendChild(card);
+    } catch (e) {
+      console.error("Carburanti Economici: map failed", e);
+      col._mapMounted = false;
+      col.innerHTML = `<div class="ce-no-map">📍 Mappa non disponibile</div>`;
+    }
   }
 }
 
