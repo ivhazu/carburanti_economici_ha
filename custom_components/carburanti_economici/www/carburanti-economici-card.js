@@ -1,4 +1,4 @@
-// Carburanti Economici Italia — Lovelace Card v6.2
+// Carburanti Economici Italia — Lovelace Card v6.3
 
 const ITALIAN_FLAG_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3 2" width="20" height="14" style="border-radius:2px;vertical-align:middle;margin:0 4px;flex-shrink:0">
   <rect width="1" height="2" fill="#009246"/>
@@ -7,7 +7,6 @@ const ITALIAN_FLAG_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3
 </svg>`;
 
 const FUEL_LABELS = { benzina: "Benzina", diesel: "Diesel", gpl: "GPL" };
-const ORDINALS = ["1°","2°","3°","4°","5°"];
 
 function slugFromPriceEntity(entityId) {
   const m = entityId.match(/^sensor\.distributore_(\d+)deg_(benzina|diesel|gpl)_(.+)_prezzo$/);
@@ -53,12 +52,49 @@ class CarburantiEconomiciCard extends HTMLElement {
     if (!this._rendered) {
       this._render();
     } else {
-      this._updateList();
-      this._updateFooter();
+      this._refreshView(hass);
+    }
+  }
+
+  // Aggiorna lista, intestazione, footer e (se serve) rimonta la mappa
+  _refreshView(hass) {
+    const stations = this._buildStations(hass);
+    this._updateList();
+    this._updateFooter();
+    this._updateHeader(stations);
+
+    // Firma della mappa: entita' + coordinate. Se cambia, la mappa va rimontata
+    const mapSig = JSON.stringify(
+      stations.filter(s => s.lat && s.lng).map(s => [s.entityId, s.lat, s.lng])
+    );
+    if (mapSig !== this._mapSig) {
+      this._remountMap(stations);
+    } else {
       const mapCard = this.querySelector("#ce-map-col")?.firstElementChild;
-      if (mapCard && mapCard.hass !== undefined) {
-        mapCard.hass = hass;
-      }
+      if (mapCard && mapCard.hass !== undefined) mapCard.hass = hass;
+    }
+  }
+
+  _updateHeader(stations) {
+    const titleEl = this.querySelector(".ce-title");
+    const chipEl = this.querySelector(".ce-fuel-chip");
+    if (!titleEl || !chipEl || !stations.length) return;
+    const zoneName = friendlyZoneName(this._hass, stations[0].zone);
+    titleEl.textContent = `Carburanti Economici — ${zoneName}`;
+    chipEl.textContent = FUEL_LABELS[stations[0].fuel] || stations[0].fuel;
+  }
+
+  _remountMap(stations) {
+    const col = this.querySelector("#ce-map-col");
+    if (!col) return;
+    const withCoords = stations.filter(s => s.lat && s.lng);
+    this._mapSig = JSON.stringify(withCoords.map(s => [s.entityId, s.lat, s.lng]));
+    col._mapMounted = false;
+    col.innerHTML = "";
+    if (withCoords.length) {
+      this._mountMap(stations, stations[0]?.zone || "");
+    } else {
+      col.innerHTML = `<div class="ce-no-map">📍 Coordinate non disponibili</div>`;
     }
   }
 
@@ -81,7 +117,6 @@ class CarburantiEconomiciCard extends HTMLElement {
         price: priceState.state,
         address: addrState?.state || "—",
         brand: get("marchio")?.state || "—",
-        // last_api_call from rank-1 price sensor attribute
         lastApiCall: meta.rank === 1 ? priceState.attributes?.last_api_call : null,
         lat: addrState?.attributes?.latitude,
         lng: addrState?.attributes?.longitude,
@@ -92,26 +127,7 @@ class CarburantiEconomiciCard extends HTMLElement {
   }
 
   _getLastApiCall() {
-    const stations = this._buildStations();
-    return stations.find(s => s.rank === 1)?.lastApiCall || null;
-  }
-
-  _buildPatchedHass(hass) {
-    const stations = this._buildStations(hass);
-    const extra = {};
-    stations.filter(s => s.lat && s.lng).forEach(s => {
-      extra[`device_tracker.ce_station_${s.rank}`] = {
-        entity_id: `device_tracker.ce_station_${s.rank}`,
-        state: "home",
-        attributes: {
-          latitude: s.lat,
-          longitude: s.lng,
-          friendly_name: String(s.rank),
-          icon: `mdi:numeric-${s.rank}-circle`,
-        },
-      };
-    });
-    return { ...hass, states: { ...hass.states, ...extra } };
+    return this._buildStations().find(s => s.rank === 1)?.lastApiCall || null;
   }
 
   _stationRowHTML(s) {
@@ -125,7 +141,7 @@ class CarburantiEconomiciCard extends HTMLElement {
         <div class="ce-content">
           <div class="ce-primary">
             <span class="ce-brand">${brandText}</span>
-            <span class="ce-price ${isUnavailable ? 'ce-unavail' : ''}">${priceText}</span>
+            <span class="ce-price ${isUnavailable ? "ce-unavail" : ""}">${priceText}</span>
           </div>
           <div class="ce-secondary">${addrText}</div>
         </div>
@@ -148,6 +164,24 @@ class CarburantiEconomiciCard extends HTMLElement {
     el.textContent = ts ? `Aggiornato: ${formatDateTime(ts)}` : "";
   }
 
+  async _handleRefresh() {
+    const btn = this.querySelector("#ce-refresh-btn");
+    if (btn) btn.classList.add("ce-spinning");
+    const buttonEntity = Object.keys(this._hass.states).find(eid => {
+      if (!eid.startsWith("button.")) return false;
+      const name = (this._hass.states[eid].attributes?.friendly_name || "").toLowerCase();
+      return name.includes("aggiorna") && name.includes("carburant");
+    });
+    if (buttonEntity) {
+      try {
+        await this._hass.callService("button", "press", { entity_id: buttonEntity });
+      } catch (e) {
+        console.error("Carburanti Economici: refresh failed", e);
+      }
+    }
+    setTimeout(() => { if (btn) btn.classList.remove("ce-spinning"); }, 1500);
+  }
+
   _render() {
     if (!this._hass || !this.config) return;
     this._rendered = true;
@@ -160,7 +194,6 @@ class CarburantiEconomiciCard extends HTMLElement {
     const zoneSlug = stations[0]?.zone || "";
     const lastApiCall = this._getLastApiCall();
     const lastUpdate = lastApiCall ? formatDateTime(lastApiCall) : null;
-
     const stationRows = stations.length
       ? stations.map(s => this._stationRowHTML(s)).join("")
       : `<div class="ce-empty">Nessun dato disponibile</div>`;
@@ -190,10 +223,15 @@ class CarburantiEconomiciCard extends HTMLElement {
           .ce-secondary { font-size:11px; color:var(--secondary-text-color); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
           .ce-empty { padding:20px; text-align:center; color:var(--secondary-text-color); font-size:13px; }
           .ce-map-col { overflow:hidden; }
-          ha-map { height:320px; width:100%; display:block; }
           .ce-no-map { height:320px; display:flex; align-items:center; justify-content:center; color:var(--secondary-text-color); font-size:12px; background:var(--secondary-background-color); }
           .ce-footer { padding:6px 16px 10px; font-size:11px; color:var(--secondary-text-color); display:flex; align-items:center; gap:4px; }
-          .ce-footer ha-icon { --mdi-icon-size:14px; }
+          .ce-footer > ha-icon { --mdi-icon-size:14px; }
+          .ce-footer-spacer { flex:1; }
+          .ce-refresh-btn { background:none; border:none; cursor:pointer; color:var(--secondary-text-color); display:flex; align-items:center; justify-content:center; padding:4px; border-radius:50%; transition:background 0.2s, color 0.2s; }
+          .ce-refresh-btn:hover { background:var(--secondary-background-color); color:var(--primary-color); }
+          .ce-refresh-btn ha-icon { --mdi-icon-size:16px; }
+          @keyframes ce-spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+          .ce-refresh-btn.ce-spinning ha-icon { animation:ce-spin 1s linear infinite; }
         </style>
 
         <div class="ce-header">
@@ -208,14 +246,22 @@ class CarburantiEconomiciCard extends HTMLElement {
             ${!hasCoords ? `<div class="ce-no-map">📍 Coordinate non disponibili</div>` : ""}
           </div>
         </div>
-        ${lastUpdate !== null ? `
         <div class="ce-divider"></div>
         <div class="ce-footer">
           <ha-icon icon="mdi:update"></ha-icon>
-          <span class="ce-footer-text">Aggiornato: ${lastUpdate}</span>
-        </div>` : `<div class="ce-footer"><ha-icon icon="mdi:update"></ha-icon><span class="ce-footer-text"></span></div>`}
+          <span class="ce-footer-text">${lastUpdate ? `Aggiornato: ${lastUpdate}` : ""}</span>
+          <span class="ce-footer-spacer"></span>
+          <button class="ce-refresh-btn" id="ce-refresh-btn" title="Aggiorna dati">
+            <ha-icon icon="mdi:refresh"></ha-icon>
+          </button>
+        </div>
       </ha-card>`;
 
+    this.querySelector("#ce-refresh-btn")?.addEventListener("click", () => this._handleRefresh());
+
+    this._mapSig = JSON.stringify(
+      stations.filter(s => s.lat && s.lng).map(s => [s.entityId, s.lat, s.lng])
+    );
     if (hasCoords) {
       requestAnimationFrame(() => this._mountMap(stations, zoneSlug));
     }
@@ -226,19 +272,14 @@ class CarburantiEconomiciCard extends HTMLElement {
     if (!col || col._mapMounted) return;
     col._mapMounted = true;
 
-    // Use real entities only — no fake trackers
-    // Address sensors have latitude/longitude attributes and work with map card
     const entities = [];
     if (this._hass.states[`zone.${zoneSlug}`]) {
       entities.push({ entity: `zone.${zoneSlug}` });
     }
-    // Real device tracker if source is a tracker
     const trackerKey = Object.keys(this._hass.states).find(
       k => k.startsWith("device_tracker.") && k.includes(zoneSlug)
     );
     if (trackerKey) entities.push({ entity: trackerKey });
-
-    // Add address sensors directly — they have lat/lng as attributes
     stations.filter(s => s.lat && s.lng).forEach(s => {
       entities.push({ entity: s.entityId });
     });
@@ -261,8 +302,6 @@ class CarburantiEconomiciCard extends HTMLElement {
     }
   }
 }
-
-// ── Editor ────────────────────────────────────────────────────────────────────
 
 class CarburantiEconomiciCardEditor extends HTMLElement {
   connectedCallback() { if (!this.innerHTML) this._render(); }

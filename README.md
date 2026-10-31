@@ -31,7 +31,7 @@
 - 🕒 **Aggiornamento schedulato** — scegli l'orario giornaliero e ogni quanti giorni aggiornare
 - 👆 **Modalità solo manuale** — nessun polling automatico, aggiorna solo tramite il pulsante (ideale per device tracker)
 - 🔄 **Pulsante aggiornamento manuale** — forza il refresh dei dati in qualsiasi momento
-- 🗺️ **Card Lovelace integrata** — mappa con pin numerati + lista prezzi, registrata automaticamente
+- 🗺️ **Card Lovelace integrata** — mappa con pin numerati + lista prezzi, con pulsante di aggiornamento e refresh automatico, registrata automaticamente
 - 🔧 **Configurazione UI** — nessun YAML da scrivere, tutto configurabile dalla UI grafica di HA
 
 ---
@@ -76,10 +76,16 @@ L'integrazione tenta di **registrare automaticamente** la card Lovelace all'avvi
 > 5. Salva e fai `Ctrl+Shift+R`
 
 La card mostra:
-- 🇮🇹 Intestazione con bandiera italiana, nome zona/tracker e tipo carburante
+- 🇮🇹 Intestazione con bandiera italiana, nome della zona/tracker e tipo di carburante, letti dalle entity
 - Lista distributori con marchio, prezzo e indirizzo
-- Mappa con pin numerati e zona/tracker di riferimento
-- Data dell'ultimo aggiornamento prezzi
+- Mappa con la zona/tracker di riferimento e i distributori (usa la card `map` nativa di Home Assistant)
+- Footer con **data e ora dell'ultima chiamata all'API**
+- Pulsante 🔄 in basso a destra per aggiornare i dati senza uscire dalla dashboard
+
+**Comportamento**
+- La card si **aggiorna da sola** quando le entity cambiano: non serve ricaricare la pagina. La mappa viene rimontata solo se cambiano i distributori o le loro coordinate, così lo zoom non si resetta a ogni aggiornamento.
+- Lo stile usa le variabili del tema di Home Assistant (angoli arrotondati, colori neutri), quindi si adatta al tema chiaro e scuro. Non richiede altre card installate.
+- Su schermi stretti (sotto i 500 px) la mappa passa sotto la lista.
 
 **Configurazione YAML minima:**
 ```yaml
@@ -154,6 +160,7 @@ Puoi aggiungere **più istanze** per monitorare zone o veicoli diversi.
 ## 🐛 Problemi noti
 
 - I prezzi mostrati dipendono dalla frequenza di aggiornamento dei gestori — usa il filtro **anzianità prezzi** per escludere prezzi vecchi.
+- Il pulsante di aggiornamento nella card preme il primo pulsante *Aggiorna Carburanti* che trova: con più istanze configurate (es. casa e lavoro) potrebbe quindi aggiornare un'istanza diversa da quella mostrata. In quel caso usa il pulsante dell'istanza corretta dalla sezione Dispositivi.
 - La registrazione automatica della card Lovelace potrebbe non funzionare su alcune versioni di HA — segui il workaround manuale nella sezione [Card Lovelace](#️-card-lovelace).
 
 ---
