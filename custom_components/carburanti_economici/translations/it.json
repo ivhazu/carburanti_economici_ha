@@ -14,12 +14,19 @@
           "update_days": "Aggiorna ogni quanti giorni",
           "fuel_benzina": "Benzina",
           "fuel_diesel": "Diesel (Gasolio)",
-          "GPL": "GPL"
+          "GPL": "GPL",
+          "data_source": "Sorgente dati"
         }
       }
     },
-    "abort": { "no_sources_found": "Nessuna zona o device tracker trovato." },
-    "error": { "no_fuel_selected": "Seleziona almeno un tipo di carburante." }
+    "abort": {
+      "no_sources_found": "Nessuna zona o device tracker trovato.",
+      "already_configured": "Questa zona o device tracker è già configurata."
+    },
+    "error": {
+      "no_fuel_selected": "Seleziona almeno un tipo di carburante.",
+      "source_already_configured": "Questa zona o device tracker è già configurata in un'altra istanza."
+    }
   },
   "options": {
     "step": {
@@ -36,10 +43,14 @@
           "update_days": "Aggiorna ogni quanti giorni",
           "fuel_benzina": "Benzina",
           "fuel_diesel": "Diesel (Gasolio)",
-          "GPL": "GPL"
+          "GPL": "GPL",
+          "data_source": "Sorgente dati"
         }
       }
     },
-    "error": { "no_fuel_selected": "Seleziona almeno un tipo di carburante." }
+    "error": {
+      "no_fuel_selected": "Seleziona almeno un tipo di carburante.",
+      "source_already_configured": "Questa zona o device tracker è già configurata in un'altra istanza."
+    }
   }
 }

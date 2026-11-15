@@ -3,7 +3,7 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 [![GitHub release](https://img.shields.io/github/release/ivhazu/carburanti_economici_ha.svg)](https://github.com/ivhazu/carburanti_economici_ha/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2023.1%2B-blue.svg)](https://www.home-assistant.io/)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.7%2B-blue.svg)](https://www.home-assistant.io/)
 
 **Carburanti Economici Italia** è una custom integration per Home Assistant che trova e mostra in tempo reale i distributori di carburante più economici nelle vicinanze di qualsiasi zona o dispositivo tracciato, usando i dati ufficiali del Ministero delle Imprese e del Made in Italy (MIMIT).
 
@@ -28,6 +28,7 @@
 - 🏆 **Fino a 5 distributori** — importa i primi N distributori per prezzo, con entity separate per ciascuno
 - 📏 **Raggio configurabile** — da 1 a 50 km
 - 📅 **Filtro per anzianità prezzi** — escludi distributori con prezzi non aggiornati da troppo tempo (0 = solo oggi)
+- 📥 **Sorgente CSV open data** — un solo download al giorno dal dataset ufficiale MIMIT, senza decine di chiamate API (niente più errori 429); se il CSV non è disponibile ripiega automaticamente sull'API
 - 🕒 **Aggiornamento schedulato** — scegli l'orario giornaliero e ogni quanti giorni aggiornare
 - 👆 **Modalità solo manuale** — nessun polling automatico, aggiorna solo tramite il pulsante (ideale per device tracker)
 - 🔄 **Pulsante aggiornamento manuale** — forza il refresh dei dati in qualsiasi momento
@@ -37,6 +38,8 @@
 ---
 
 ## 📊 Dati
+
+La sorgente predefinita è il **dataset open data MIMIT** (CSV di anagrafica impianti e prezzi, aggiornato ogni mattina alle 8:00). In alternativa puoi usare l'API `carburanti.mise.gov.it`, che però richiede una chiamata per ogni distributore ed è soggetta a limiti (errore 429). Le installazioni esistenti restano sull'API finché non cambi la *Sorgente dati* dalle opzioni.
 
 I prezzi provengono dall'**API ufficiale MIMIT** (`carburanti.mise.gov.it`), alimentata dai gestori dei distributori in ottemperanza alla Legge n. 99/2009. I prezzi mostrati sono **self-service** ove disponibili, altrimenti il prezzo servito.
 
@@ -53,6 +56,8 @@ Per ogni combinazione *zona/tracker + carburante + posizione in classifica* veng
 | `sensor.distributore_1deg_benzina_home_indirizzo` | Indirizzo + coordinate | `Via Roma 1, Milano` |
 | `sensor.distributore_1deg_benzina_home_marchio` | Marchio | `ENI` |
 | `sensor.distributore_1deg_benzina_home_aggiornamento` | Data ultimo aggiornamento prezzi | timestamp |
+
+Il sensore `_prezzo` di rango 1 espone anche gli attributi diagnostici `last_api_call`, `data_source` (sorgente realmente usata) e `last_error` (ultimo errore, vuoto se tutto ok).
 
 Il sensore `_indirizzo` espone gli attributi `latitude` e `longitude`, compatibili con la card `map` nativa di HA.
 
@@ -133,8 +138,9 @@ L'editor grafico è disponibile direttamente dalla UI di HA.
 | **Raggio (km)** | Raggio di ricerca distributori | 10 |
 | **N° distributori** | Quanti distributori importare (1-5) | 1 |
 | **Anzianità prezzi (giorni)** | Escludi prezzi più vecchi di X giorni (0 = solo oggi) | 7 |
+| **Sorgente dati** | CSV open data (con ripiego su API) oppure solo API | CSV (nuove installazioni) |
 | **Modalità aggiornamento** | Automatico giornaliero o solo manuale | Automatico |
-| **Orario aggiornamento** | A che ora aggiornare ogni giorno (es. `07:00`) | `07:00` |
+| **Orario aggiornamento** | A che ora aggiornare ogni giorno (con il CSV scegli dopo le 8:00, quando il MIMIT lo pubblica) | `08:30` |
 | **Ogni quanti giorni** | Frequenza aggiornamento automatico | 1 |
 | **Benzina** | Abilita ricerca benzina | ✅ |
 | **Diesel** | Abilita ricerca diesel | ✅ |
@@ -151,7 +157,7 @@ Puoi aggiungere **più istanze** per monitorare zone o veicoli diversi.
 
 ## 📋 Requisiti
 
-- Home Assistant **2023.1.0** o superiore
+- Home Assistant **2024.7.0** o superiore
 - Connessione internet
 - Almeno una **Zona** configurata in HA oppure un **Device Tracker** con coordinate GPS
 
@@ -160,7 +166,8 @@ Puoi aggiungere **più istanze** per monitorare zone o veicoli diversi.
 ## 🐛 Problemi noti
 
 - I prezzi mostrati dipendono dalla frequenza di aggiornamento dei gestori — usa il filtro **anzianità prezzi** per escludere prezzi vecchi.
-- Il pulsante di aggiornamento nella card preme il primo pulsante *Aggiorna Carburanti* che trova: con più istanze configurate (es. casa e lavoro) potrebbe quindi aggiornare un'istanza diversa da quella mostrata. In quel caso usa il pulsante dell'istanza corretta dalla sezione Dispositivi.
+- Ogni zona o device tracker può essere configurato una sola volta. Se un aggiornamento fallisce, i dati precedenti restano visibili e il motivo è in `last_error`.
+- La sorgente CSV è stata introdotta in v1.5.0: se qualcosa non torna controlla `data_source` e `last_error` e segnala una issue.
 - La registrazione automatica della card Lovelace potrebbe non funzionare su alcune versioni di HA — segui il workaround manuale nella sezione [Card Lovelace](#️-card-lovelace).
 
 ---

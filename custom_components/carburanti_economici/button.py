@@ -25,6 +25,8 @@ class CarburantiRefreshButton(CoordinatorEntity, ButtonEntity):
         self._attr_unique_id = f"{entry.entry_id}_refresh"
         self._attr_name = f"Aggiorna Carburanti {source_label}"
         self._attr_icon = "mdi:refresh"
+        # entity_id prevedibile, usato dalla card per trovare il pulsante giusto
+        self.entity_id = f"button.aggiorna_carburanti_{source_slug}"
 
     @property
     def device_info(self):

@@ -18,10 +18,21 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
+from . import csv_source
 from .const import (
     API_CALL_DELAY,
+    API_MAX_RETRIES,
+    API_RETRY_BASE_DELAY,
+    CONF_DATA_SOURCE,
+    CSV_PRICES_URL,
+    CSV_STATIONS_URL,
+    CSV_TIMEOUT,
+    DATA_SOURCE_API,
+    DATA_SOURCE_CSV,
     API_REGISTRY_URL,
     API_SEARCH_URL,
     CONF_FUEL_TYPES,
@@ -128,6 +139,8 @@ class CarburantiCoordinator(DataUpdateCoordinator):
         self._unsub_schedule = None
         self._last_update_date: datetime | None = None
         self.last_api_call: datetime | None = None
+        self.last_error: str | None = None
+        self.data_source_used: str | None = None
 
         # Use a very long update_interval so async_request_refresh works
         # Actual scheduling is handled manually via async_track_time_change
@@ -184,6 +197,11 @@ class CarburantiCoordinator(DataUpdateCoordinator):
         return self.entry.data.get(CONF_UPDATE_MODE, DEFAULT_UPDATE_MODE)
 
     @property
+    def data_source(self) -> str:
+        # le configurazioni esistenti (senza chiave) restano sull'API
+        return self.entry.data.get(CONF_DATA_SOURCE, DATA_SOURCE_API)
+
+    @property
     def source_entity(self) -> str:
         return self.entry.data[CONF_SOURCE_ENTITY]
 
@@ -221,18 +239,19 @@ class CarburantiCoordinator(DataUpdateCoordinator):
         return float(lat), float(lng)
 
     def _is_fresh(self, insert_date: str | None) -> bool:
+        """Prezzo recente? Le date naive del MIMIT sono in ora italiana."""
         if not insert_date:
             return False
         try:
             dt = datetime.fromisoformat(insert_date)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            now = datetime.now(tz=timezone.utc)
-            if self.max_age_days == 0:
-                return dt.date() >= now.date()
-            return dt >= now - timedelta(days=self.max_age_days)
         except (ValueError, TypeError):
             return False
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+        now = dt_util.now()
+        if self.max_age_days == 0:
+            return dt_util.as_local(dt).date() >= now.date()
+        return dt >= now - timedelta(days=self.max_age_days)
 
     async def _async_update_data(self) -> dict:
         coords = self._get_coords()
@@ -241,43 +260,149 @@ class CarburantiCoordinator(DataUpdateCoordinator):
         lat, lng = coords
 
         self.last_api_call = datetime.now(tz=timezone.utc)
-        result = {}
-        async with aiohttp.ClientSession() as session:
-            for fuel_idx, fuel_key in enumerate(self.fuel_types):
-                fuel_info = FUEL_TYPES[fuel_key]
-                try:
-                    # Delay between fuel types
-                    if fuel_idx > 0:
-                        await asyncio.sleep(API_CALL_DELAY)
+        session = async_get_clientsession(self.hass)
+        result: dict | None = None
+        error: str | None = None
 
-                    station_tuples = await self._fetch_sorted_ids(
-                        session, lat, lng, fuel_info["api_code"]
-                    )
-                    stations = []
-                    for station_id, s_lat, s_lng in station_tuples:
-                        if len(stations) >= self.num_stations:
-                            break
-                        # Delay between registry calls
-                        if stations:
-                            await asyncio.sleep(API_CALL_DELAY)
-                        metadata = await self._fetch_station_metadata(
-                            session, station_id, fuel_info["fuel_name_api"]
-                        )
-                        if self._is_fresh(metadata.get("insert_date")):
-                            metadata["latitude"] = s_lat
-                            metadata["longitude"] = s_lng
-                            stations.append({"id": station_id, **metadata})
-                        else:
-                            _LOGGER.debug("Skipping station %s: price too old (%s)",
-                                          station_id, metadata.get("insert_date"))
-                    if not stations:
-                        _LOGGER.warning("No fresh stations for %s within %d km",
-                                        fuel_key, self.radius)
-                    result[fuel_key] = stations
-                except Exception as err:
-                    _LOGGER.warning("Error fetching %s: %s", fuel_key, err)
-                    result[fuel_key] = []
+        if self.data_source == DATA_SOURCE_CSV:
+            try:
+                result = await self._update_from_csv(session, lat, lng)
+                self.data_source_used = DATA_SOURCE_CSV
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("Sorgente CSV non utilizzabile (%s): ripiego sull'API", err)
+                error = f"CSV: {err}"
+
+        if result is None:
+            try:
+                result = await self._update_from_api(session, lat, lng)
+                self.data_source_used = DATA_SOURCE_API
+            except Exception as err:  # noqa: BLE001
+                error = f"{error + ' | ' if error else ''}API: {err}"
+                result = None
+
+        if result is None:
+            self.last_error = error
+            if self.data:
+                # tengo gli ultimi dati buoni invece di rendere tutto "non disponibile"
+                _LOGGER.error("Aggiornamento fallito, mantengo i dati precedenti: %s", error)
+                return self.data
+            raise UpdateFailed(error or "aggiornamento fallito")
+
+        # carburanti falliti singolarmente: tengo i vecchi dati se ci sono
+        failed = result.pop("_failed", {})
+        for fuel_key, msg in failed.items():
+            if self.data and self.data.get(fuel_key):
+                result[fuel_key] = self.data[fuel_key]
+            else:
+                result.setdefault(fuel_key, [])
+        notes = [error] if error else []  # CSV fallito ma API riuscita
+        notes += [f"{k}: {v}" for k, v in failed.items()]
+        self.last_error = "; ".join(notes) or None
         return result
+
+    # ---------------------------------------------------------------- CSV
+    async def _download(self, session, url: str) -> bytes:
+        async with async_timeout(CSV_TIMEOUT):
+            async with session.get(url) as resp:
+                resp.raise_for_status()
+                return await resp.read()
+
+    async def _update_from_csv(self, session, lat, lng) -> dict:
+        raw_st = await self._download(session, CSV_STATIONS_URL)
+        stations = await self.hass.async_add_executor_job(
+            csv_source.parse_stations_in_radius, raw_st, lat, lng, self.radius
+        )
+        if not stations:
+            raise ValueError(f"nessun impianto entro {self.radius} km nell'anagrafica CSV")
+        raw_pr = await self._download(session, CSV_PRICES_URL)
+        fuel_names = {k: FUEL_TYPES[k]["fuel_name_csv"] for k in self.fuel_types}
+        prices = await self.hass.async_add_executor_job(
+            csv_source.parse_prices, raw_pr, set(stations), fuel_names
+        )
+        if not any(prices.values()):
+            raise ValueError("nessun prezzo trovato nel CSV per gli impianti della zona")
+
+        result: dict = {}
+        for fuel_key in self.fuel_types:
+            rows = sorted(prices[fuel_key].items(), key=lambda kv: kv[1]["price"])
+            found = []
+            for sid, p in rows:
+                if len(found) >= self.num_stations:
+                    break
+                if not self._is_fresh(p["insert_date"]):
+                    continue
+                st = stations[sid]
+                found.append({
+                    "id": sid, "name": st["name"], "brand": st["brand"],
+                    "address": st["address"], "price": p["price"],
+                    "insert_date": p["insert_date"],
+                    "latitude": st["latitude"], "longitude": st["longitude"],
+                })
+            if not found:
+                _LOGGER.warning("No fresh stations for %s within %d km", fuel_key, self.radius)
+            result[fuel_key] = found
+        return result
+
+    # ---------------------------------------------------------------- API
+    async def _update_from_api(self, session, lat, lng) -> dict:
+        result: dict = {}
+        failed: dict = {}
+        for fuel_idx, fuel_key in enumerate(self.fuel_types):
+            fuel_info = FUEL_TYPES[fuel_key]
+            try:
+                if fuel_idx > 0:
+                    await asyncio.sleep(API_CALL_DELAY)
+                station_tuples = await self._fetch_sorted_ids(
+                    session, lat, lng, fuel_info["api_code"]
+                )
+                stations = []
+                for station_id, s_lat, s_lng in station_tuples:
+                    if len(stations) >= self.num_stations:
+                        break
+                    await asyncio.sleep(API_CALL_DELAY)
+                    metadata = await self._fetch_station_metadata(
+                        session, station_id, fuel_info["fuel_name_api"]
+                    )
+                    if self._is_fresh(metadata.get("insert_date")):
+                        metadata["latitude"] = s_lat
+                        metadata["longitude"] = s_lng
+                        stations.append({"id": station_id, **metadata})
+                    else:
+                        _LOGGER.debug("Skipping station %s: price too old (%s)",
+                                      station_id, metadata.get("insert_date"))
+                if not stations:
+                    _LOGGER.warning("No fresh stations for %s within %d km",
+                                    fuel_key, self.radius)
+                result[fuel_key] = stations
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("Error fetching %s: %s", fuel_key, err)
+                failed[fuel_key] = str(err) or type(err).__name__
+        if failed and len(failed) == len(self.fuel_types):
+            raise UpdateFailed("; ".join(f"{k}: {v}" for k, v in failed.items()))
+        result["_failed"] = failed
+        return result
+
+    async def _request_json(self, session, method: str, url: str, **kwargs):
+        """GET/POST con retry e backoff su 429/5xx."""
+        delay = API_RETRY_BASE_DELAY
+        for attempt in range(1, API_MAX_RETRIES + 1):
+            try:
+                async with async_timeout(60):
+                    async with session.request(method, url, **kwargs) as resp:
+                        if resp.status in (429, 500, 502, 503, 504) and attempt < API_MAX_RETRIES:
+                            retry_after = resp.headers.get("Retry-After", "")
+                            wait = int(retry_after) if retry_after.isdigit() else delay
+                            _LOGGER.debug("HTTP %s da %s, riprovo tra %ss", resp.status, url, wait)
+                        else:
+                            resp.raise_for_status()
+                            return await resp.json()
+            except (aiohttp.ClientConnectionError, asyncio.TimeoutError):
+                if attempt == API_MAX_RETRIES:
+                    raise
+                wait = delay
+            await asyncio.sleep(wait)
+            delay *= 2
+        raise RuntimeError("retry esauriti")
 
     async def _fetch_sorted_ids(self, session, lat, lng, api_code):
         payload = {
@@ -286,13 +411,10 @@ class CarburantiCoordinator(DataUpdateCoordinator):
             "fuelType": api_code,
             "priceOrder": "asc",
         }
-        async with async_timeout(60):
-            async with session.post(
-                API_SEARCH_URL, json=payload,
-                headers={"Content-Type": "application/json"}
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        data = await self._request_json(
+            session, "POST", API_SEARCH_URL, json=payload,
+            headers={"Content-Type": "application/json"},
+        )
         results = data.get("results", [])
         out = []
         for r in results:
@@ -307,10 +429,7 @@ class CarburantiCoordinator(DataUpdateCoordinator):
 
     async def _fetch_station_metadata(self, session, station_id, fuel_name):
         url = API_REGISTRY_URL.format(station_id)
-        async with async_timeout(60):
-            async with session.get(url) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        data = await self._request_json(session, "GET", url)
         fuels = data.get("fuels", [])
         price = None
         insert_date = None

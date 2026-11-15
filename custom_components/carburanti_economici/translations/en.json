@@ -2,44 +2,55 @@
   "config": {
     "step": {
       "user": {
-        "title": "Configura Carburanti Economici",
+        "title": "Set up Carburanti Economici",
         "data": {
-          "source_type": "Tipo sorgente",
-          "source_entity": "Zona o Device Tracker",
-          "radius": "Raggio di ricerca (km)",
-          "num_stations": "Numero di distributori (1-5)",
-          "max_age_days": "Anzianità massima prezzi (giorni, 0 = solo oggi)",
-          "update_mode": "Modalità aggiornamento",
-          "update_time": "Orario aggiornamento giornaliero (HH:MM)",
-          "update_days": "Aggiorna ogni quanti giorni",
-          "fuel_benzina": "Benzina",
-          "fuel_diesel": "Diesel (Gasolio)",
-          "GPL": "GPL"
+          "source_type": "Source type",
+          "source_entity": "Zone or Device Tracker",
+          "radius": "Search radius (km)",
+          "num_stations": "Number of stations (1-5)",
+          "max_age_days": "Maximum price age (days, 0 = today only)",
+          "data_source": "Data source",
+          "update_mode": "Update mode",
+          "update_time": "Daily update time (HH:MM)",
+          "update_days": "Update every N days",
+          "fuel_benzina": "Petrol",
+          "fuel_diesel": "Diesel",
+          "GPL": "LPG"
         }
       }
     },
-    "abort": { "no_sources_found": "Nessuna zona o device tracker trovato." },
-    "error": { "no_fuel_selected": "Seleziona almeno un tipo di carburante." }
+    "abort": {
+      "no_sources_found": "No zone or device tracker found.",
+      "already_configured": "This zone or device tracker is already configured."
+    },
+    "error": {
+      "no_fuel_selected": "Select at least one fuel type.",
+      "source_already_configured": "This zone or device tracker is already used by another instance."
+    }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Modifica Configurazione",
+        "title": "Edit configuration",
         "data": {
-          "source_type": "Tipo sorgente",
-          "source_entity": "Zona o Device Tracker",
-          "radius": "Raggio di ricerca (km)",
-          "num_stations": "Numero di distributori (1-5)",
-          "max_age_days": "Anzianità massima prezzi (giorni, 0 = solo oggi)",
-          "update_mode": "Modalità aggiornamento",
-          "update_time": "Orario aggiornamento giornaliero (HH:MM)",
-          "update_days": "Aggiorna ogni quanti giorni",
-          "fuel_benzina": "Benzina",
-          "fuel_diesel": "Diesel (Gasolio)",
-          "GPL": "GPL"
+          "source_type": "Source type",
+          "source_entity": "Zone or Device Tracker",
+          "radius": "Search radius (km)",
+          "num_stations": "Number of stations (1-5)",
+          "max_age_days": "Maximum price age (days, 0 = today only)",
+          "data_source": "Data source",
+          "update_mode": "Update mode",
+          "update_time": "Daily update time (HH:MM)",
+          "update_days": "Update every N days",
+          "fuel_benzina": "Petrol",
+          "fuel_diesel": "Diesel",
+          "GPL": "LPG"
         }
       }
     },
-    "error": { "no_fuel_selected": "Seleziona almeno un tipo di carburante." }
+    "error": {
+      "no_fuel_selected": "Select at least one fuel type.",
+      "source_already_configured": "This zone or device tracker is already used by another instance."
+    }
   }
 }

@@ -116,6 +116,8 @@ class CarburantiPriceSensor(CarburantiBaseSensor):
         # Expose last API call timestamp on rank 1 sensors
         if self._rank == 1 and self.coordinator.last_api_call is not None:
             attrs["last_api_call"] = self.coordinator.last_api_call.isoformat()
+            attrs["data_source"] = self.coordinator.data_source_used
+            attrs["last_error"] = self.coordinator.last_error
         return attrs
 
 

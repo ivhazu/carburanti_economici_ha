@@ -12,9 +12,10 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
-    CONF_FUEL_TYPES, CONF_MAX_AGE_DAYS, CONF_NUM_STATIONS,
+    CONF_DATA_SOURCE, CONF_FUEL_TYPES, CONF_MAX_AGE_DAYS, CONF_NUM_STATIONS,
     CONF_RADIUS, CONF_SOURCE_ENTITY, CONF_SOURCE_TYPE,
     CONF_UPDATE_DAYS, CONF_UPDATE_MODE, CONF_UPDATE_TIME,
+    DATA_SOURCE_API, DATA_SOURCE_CSV, DEFAULT_DATA_SOURCE,
     DEFAULT_MAX_AGE_DAYS, DEFAULT_NUM_STATIONS, DEFAULT_RADIUS,
     DEFAULT_UPDATE_DAYS, DEFAULT_UPDATE_MODE, DEFAULT_UPDATE_TIME,
     DOMAIN, FUEL_BENZINA, FUEL_DIESEL, FUEL_GPL, FUEL_TYPES,
@@ -61,6 +62,11 @@ def _build_schema(hass: HomeAssistant, defaults: dict | None = None) -> vol.Sche
             NumberSelector(NumberSelectorConfig(min=1, max=5, step=1, mode=NumberSelectorMode.BOX)),
         vol.Required(CONF_MAX_AGE_DAYS, default=d.get(CONF_MAX_AGE_DAYS, DEFAULT_MAX_AGE_DAYS)):
             NumberSelector(NumberSelectorConfig(min=0, max=90, step=1, mode=NumberSelectorMode.BOX)),
+        vol.Required(CONF_DATA_SOURCE, default=d.get(CONF_DATA_SOURCE, DEFAULT_DATA_SOURCE)):
+            SelectSelector(SelectSelectorConfig(options=[
+                SelectOptionDict(value=DATA_SOURCE_CSV, label="CSV open data MIMIT (consigliato, con ripiego su API)"),
+                SelectOptionDict(value=DATA_SOURCE_API, label="API carburanti.mise.gov.it"),
+            ], mode=SelectSelectorMode.DROPDOWN)),
         vol.Required(CONF_UPDATE_MODE, default=update_mode):
             SelectSelector(SelectSelectorConfig(options=[
                 SelectOptionDict(value=UPDATE_MODE_SCHEDULED, label="Aggiornamento automatico giornaliero"),
@@ -87,11 +93,20 @@ def _extract(user_input: dict) -> dict:
         CONF_RADIUS: int(user_input[CONF_RADIUS]),
         CONF_NUM_STATIONS: int(user_input[CONF_NUM_STATIONS]),
         CONF_MAX_AGE_DAYS: int(user_input[CONF_MAX_AGE_DAYS]),
+        CONF_DATA_SOURCE: user_input.get(CONF_DATA_SOURCE, DEFAULT_DATA_SOURCE),
         CONF_UPDATE_MODE: user_input[CONF_UPDATE_MODE],
         CONF_UPDATE_TIME: user_input.get(CONF_UPDATE_TIME, DEFAULT_UPDATE_TIME),
         CONF_UPDATE_DAYS: int(user_input.get(CONF_UPDATE_DAYS, DEFAULT_UPDATE_DAYS)),
         CONF_FUEL_TYPES: fuels,
     }
+
+
+def _source_in_use(hass: HomeAssistant, entity_id: str, exclude_entry_id: str | None = None) -> bool:
+    """True se un'altra istanza usa già questa zona/tracker."""
+    return any(
+        e.entry_id != exclude_entry_id and e.data.get(CONF_SOURCE_ENTITY) == entity_id
+        for e in hass.config_entries.async_entries(DOMAIN)
+    )
 
 
 class CarburantiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -106,7 +121,11 @@ class CarburantiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data = _extract(user_input)
             if not data[CONF_FUEL_TYPES]:
                 errors["base"] = "no_fuel_selected"
+            elif _source_in_use(self.hass, data[CONF_SOURCE_ENTITY]):
+                errors["base"] = "source_already_configured"
             else:
+                await self.async_set_unique_id(data[CONF_SOURCE_ENTITY])
+                self._abort_if_unique_id_configured()
                 s = self.hass.states.get(data[CONF_SOURCE_ENTITY])
                 name = (s.attributes.get("friendly_name") if s else None) or data[CONF_SOURCE_ENTITY]
                 fuels = " + ".join(FUEL_TYPES[f]["name"] for f in data[CONF_FUEL_TYPES])
@@ -135,6 +154,8 @@ class CarburantiOptionsFlow(config_entries.OptionsFlow):
             data = _extract(user_input)
             if not data[CONF_FUEL_TYPES]:
                 errors["base"] = "no_fuel_selected"
+            elif _source_in_use(self.hass, data[CONF_SOURCE_ENTITY], self._entry_id):
+                errors["base"] = "source_already_configured"
             else:
                 self.hass.config_entries.async_update_entry(entry, data=data)
                 await self.hass.config_entries.async_reload(self._entry_id)
@@ -146,6 +167,7 @@ class CarburantiOptionsFlow(config_entries.OptionsFlow):
             CONF_RADIUS: d.get(CONF_RADIUS, DEFAULT_RADIUS),
             CONF_NUM_STATIONS: d.get(CONF_NUM_STATIONS, DEFAULT_NUM_STATIONS),
             CONF_MAX_AGE_DAYS: d.get(CONF_MAX_AGE_DAYS, DEFAULT_MAX_AGE_DAYS),
+            CONF_DATA_SOURCE: d.get(CONF_DATA_SOURCE, DATA_SOURCE_API),
             CONF_UPDATE_MODE: d.get(CONF_UPDATE_MODE, DEFAULT_UPDATE_MODE),
             CONF_UPDATE_TIME: d.get(CONF_UPDATE_TIME, DEFAULT_UPDATE_TIME),
             CONF_UPDATE_DAYS: d.get(CONF_UPDATE_DAYS, DEFAULT_UPDATE_DAYS),

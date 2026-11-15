@@ -17,10 +17,9 @@ function slugFromPriceEntity(entityId) {
 function friendlyZoneName(hass, zoneSlug) {
   const state = hass.states[`zone.${zoneSlug}`];
   if (state) return state.attributes.friendly_name || zoneSlug;
-  for (const [eid, s] of Object.entries(hass.states)) {
-    if (eid.startsWith("device_tracker.") && eid.includes(zoneSlug))
-      return s.attributes.friendly_name || zoneSlug;
-  }
+  // lo slug è l'object_id esatto della zona/tracker scelto in configurazione
+  const tr = hass.states[`device_tracker.${zoneSlug}`];
+  if (tr) return tr.attributes.friendly_name || zoneSlug;
   return zoneSlug.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
@@ -167,11 +166,17 @@ class CarburantiEconomiciCard extends HTMLElement {
   async _handleRefresh() {
     const btn = this.querySelector("#ce-refresh-btn");
     if (btn) btn.classList.add("ce-spinning");
-    const buttonEntity = Object.keys(this._hass.states).find(eid => {
-      if (!eid.startsWith("button.")) return false;
-      const name = (this._hass.states[eid].attributes?.friendly_name || "").toLowerCase();
-      return name.includes("aggiorna") && name.includes("carburant");
-    });
+    // pulsante dell'istanza mostrata (entity_id prevedibile), con ripiego sul primo trovato
+    const zoneSlug = this._buildStations?.()[0]?.zone;
+    let buttonEntity = zoneSlug && this._hass.states[`button.aggiorna_carburanti_${zoneSlug}`]
+      ? `button.aggiorna_carburanti_${zoneSlug}` : null;
+    if (!buttonEntity) {
+      buttonEntity = Object.keys(this._hass.states).find(eid => {
+        if (!eid.startsWith("button.")) return false;
+        const name = (this._hass.states[eid].attributes?.friendly_name || "").toLowerCase();
+        return name.includes("aggiorna") && name.includes("carburant");
+      });
+    }
     if (buttonEntity) {
       try {
         await this._hass.callService("button", "press", { entity_id: buttonEntity });
@@ -276,10 +281,9 @@ class CarburantiEconomiciCard extends HTMLElement {
     if (this._hass.states[`zone.${zoneSlug}`]) {
       entities.push({ entity: `zone.${zoneSlug}` });
     }
-    const trackerKey = Object.keys(this._hass.states).find(
-      k => k.startsWith("device_tracker.") && k.includes(zoneSlug)
-    );
-    if (trackerKey) entities.push({ entity: trackerKey });
+    if (this._hass.states[`device_tracker.${zoneSlug}`]) {
+      entities.push({ entity: `device_tracker.${zoneSlug}` });
+    }
     stations.filter(s => s.lat && s.lng).forEach(s => {
       entities.push({ entity: s.entityId });
     });
