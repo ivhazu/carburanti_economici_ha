@@ -12,6 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import CarburantiCoordinator
+from .marker import marker_data_uri
 from .const import CONF_FUEL_TYPES, CONF_SOURCE_ENTITY, DOMAIN, FUEL_TYPES, STATION_ORDINALS
 
 _LOGGER = logging.getLogger(__name__)
@@ -118,6 +119,7 @@ class CarburantiPriceSensor(CarburantiBaseSensor):
             attrs["last_api_call"] = self.coordinator.last_api_call.isoformat()
             attrs["data_source"] = self.coordinator.data_source_used
             attrs["last_error"] = self.coordinator.last_error
+            attrs["warnings"] = self.coordinator.warnings
         return attrs
 
 
@@ -143,6 +145,14 @@ class CarburantiAddressSensor(CarburantiBaseSensor):
     def native_value(self):
         data = self._station_data
         return data["address"] if data else None
+
+    @property
+    def entity_picture(self):
+        """Map pin: user logo if present, otherwise a generic brand badge."""
+        data = self._station_data
+        if not data:
+            return None
+        return data.get("logo") or marker_data_uri(self._rank, data.get("brand"))
 
     @property
     def extra_state_attributes(self):

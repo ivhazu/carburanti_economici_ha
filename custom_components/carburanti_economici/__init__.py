@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
@@ -24,6 +25,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from . import csv_source
+from .marker import brand_slug
 from .const import (
     API_CALL_DELAY,
     API_MAX_RETRIES,
@@ -172,6 +174,7 @@ class CarburantiCoordinator(DataUpdateCoordinator):
         self._last_update_date: datetime | None = None
         self.last_api_call: datetime | None = None
         self.last_error: str | None = None
+        self.warnings: str | None = None
         self.data_source_used: str | None = None
 
         # Use a very long update_interval so async_request_refresh works
@@ -270,8 +273,11 @@ class CarburantiCoordinator(DataUpdateCoordinator):
             return None
         return float(lat), float(lng)
 
-    def _is_fresh(self, insert_date: str | None) -> bool:
-        """Prezzo recente? Le date naive del MIMIT sono in ora italiana."""
+    def _is_fresh(self, insert_date: str | None, csv: bool = False) -> bool:
+        """Recent price? Naive MIMIT dates are Italian local time.
+
+        The CSV is a daily snapshot, so "today only" (0) means today or yesterday there.
+        """
         if not insert_date:
             return False
         try:
@@ -282,7 +288,8 @@ class CarburantiCoordinator(DataUpdateCoordinator):
             dt = dt.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
         now = dt_util.now()
         if self.max_age_days == 0:
-            return dt_util.as_local(dt).date() >= now.date()
+            cutoff = now.date() - timedelta(days=1 if csv else 0)
+            return dt_util.as_local(dt).date() >= cutoff
         return dt >= now - timedelta(days=self.max_age_days)
 
     async def _async_update_data(self) -> dict:
@@ -330,7 +337,31 @@ class CarburantiCoordinator(DataUpdateCoordinator):
         notes = [error] if error else []  # CSV fallito ma API riuscita
         notes += [f"{k}: {v}" for k, v in failed.items()]
         self.last_error = "; ".join(notes) or None
+
+        warnings = []
+        for fuel_key in self.fuel_types:
+            found = len(result.get(fuel_key) or [])
+            if found < self.num_stations:
+                warnings.append(
+                    f"{fuel_key}: {found}/{self.num_stations} recent stations "
+                    "(increase radius or max price age)"
+                )
+        self.warnings = "; ".join(warnings) or None
+
+        await self.hass.async_add_executor_job(self._add_logos, result)
         return result
+
+    def _add_logos(self, result: dict) -> None:
+        """Attach a user-provided logo URL (config/www/carburanti_economici/logos/<brand>.png)."""
+        logo_dir = self.hass.config.path("www", DOMAIN, "logos")
+        try:
+            files = {os.path.splitext(f)[0].lower(): f for f in os.listdir(logo_dir)}
+        except OSError:
+            files = {}
+        for stations in result.values():
+            for st in stations:
+                fname = files.get(brand_slug(st.get("brand")))
+                st["logo"] = f"/local/{DOMAIN}/logos/{fname}" if fname else None
 
     # ---------------------------------------------------------------- CSV
     async def _download(self, session, url: str) -> bytes:
@@ -361,7 +392,7 @@ class CarburantiCoordinator(DataUpdateCoordinator):
             for sid, p in rows:
                 if len(found) >= self.num_stations:
                     break
-                if not self._is_fresh(p["insert_date"]):
+                if not self._is_fresh(p["insert_date"], csv=True):
                     continue
                 st = stations[sid]
                 found.append({

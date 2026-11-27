@@ -43,3 +43,24 @@ def test_prices_self_preferred_and_exact_fuel_name():
     assert p["benzina"]["1"]["price"] == 1.799  # self vince sul servito
     assert p["benzina"]["3"]["price"] == 1.759  # "Benzina WR 100" escluso
     assert "2" not in p["benzina"]
+
+
+def _load(name):
+    spec = importlib.util.spec_from_file_location(
+        name, Path(__file__).parent.parent / "custom_components" / "carburanti_economici" / f"{name}.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_marker_helpers():
+    mk = _load("marker")
+    assert mk.brand_slug("Agip Eni") == "agip_eni"
+    assert mk.brand_slug("Api-Ip") == "api_ip"
+    assert mk.brand_abbr("Esso") == "ESSO"
+    assert mk.brand_abbr("Tamoil") == "TAM"
+    assert mk.brand_abbr(None) == "?"
+    uri = mk.marker_data_uri(2, "Q8")
+    assert uri.startswith("data:image/svg+xml;utf8,%3Csvg")
+    assert "Q8" in mk.marker_svg(2, "Q8")
+    assert mk.brand_color("Q8") == mk.brand_color("q8")
