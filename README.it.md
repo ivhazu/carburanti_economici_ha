@@ -3,7 +3,7 @@
 [![Add to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ivhazu&repository=carburanti_economici_ha&category=integration)
 [![Add integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=carburanti_economici)
 
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
+[![Marketplace / HACS](https://img.shields.io/badge/Marketplace%20%2F%20HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 [![GitHub release](https://img.shields.io/github/v/release/ivhazu/carburanti_economici_ha)](https://github.com/ivhazu/carburanti_economici_ha/releases)
 [![Validate](https://github.com/ivhazu/carburanti_economici_ha/actions/workflows/validate.yml/badge.svg)](https://github.com/ivhazu/carburanti_economici_ha/actions/workflows/validate.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -37,13 +37,19 @@
 
 ## 📥 Installazione
 
-**HACS (consigliato)**
+**Marketplace (Home Assistant 2026.11 o successivo)**
 
-1. Premi il pulsante **Add to HACS** in cima a questa pagina, oppure in HACS → menu ⋮ → *Repository personalizzati* aggiungi `https://github.com/ivhazu/carburanti_economici_ha` come **Integrazione**
-2. Scarica **Carburanti Economici Italia** e riavvia Home Assistant
+1. Premi il pulsante **Add to HACS** in cima a questa pagina (dalla 2026.11 apre il Marketplace), oppure vai in *Impostazioni → Marketplace*, premi **Add from link** e inserisci `ivhazu/carburanti_economici_ha` (per aggiungere un repository personalizzato serve collegare un account GitHub)
+2. Apri **Carburanti Economici Italia** e premi **Install**. Riavvia Home Assistant solo se te lo chiede
 3. Premi **Add integration** in cima a questa pagina, oppure *Impostazioni → Dispositivi e servizi → Aggiungi integrazione*
 
-> L'integrazione non è (ancora) nel catalogo predefinito di HACS: il pulsante la aggiunge come repository personalizzato.
+**HACS (Home Assistant 2026.10 o precedente)**
+
+1. In HACS → menu ⋮ → *Repository personalizzati* aggiungi `https://github.com/ivhazu/carburanti_economici_ha` come **Integrazione**
+2. Scarica **Carburanti Economici Italia** e riavvia Home Assistant
+3. Aggiungi l'integrazione come sopra
+
+> L'integrazione non è (ancora) nel catalogo predefinito: si aggiunge come repository personalizzato. Su Home Assistant 2026.11+ HACS non si può installare, perché lo sostituisce il Marketplace.
 
 **Manuale**: copia `custom_components/carburanti_economici/` in `config/custom_components/` e riavvia.
 
