@@ -18,6 +18,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -107,11 +108,42 @@ async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
         )
 
 
+SENSOR_TYPES = ("prezzo", "nome", "indirizzo", "marchio", "aggiornamento")
+
+
+def _async_cleanup_stale(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove devices/entities of fuels or ranks no longer in the configuration."""
+    fuels = entry.data.get(CONF_FUEL_TYPES, [])
+    num = entry.data.get(CONF_NUM_STATIONS, DEFAULT_NUM_STATIONS)
+
+    valid_devices = {f"{entry.entry_id}_control"}
+    valid_uids = {f"{entry.entry_id}_refresh"}
+    for fuel in fuels:
+        for rank in range(1, num + 1):
+            valid_devices.add(f"{entry.entry_id}_{fuel}_{rank}")
+            for st in SENSOR_TYPES:
+                valid_uids.add(f"{entry.entry_id}_{fuel}_{rank}_{st}")
+
+    ent_reg = er.async_get(hass)
+    for ent in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        if ent.unique_id not in valid_uids:
+            _LOGGER.info("Removing stale entity %s", ent.entity_id)
+            ent_reg.async_remove(ent.entity_id)
+
+    dev_reg = dr.async_get(hass)
+    for dev in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
+        ids = {i[1] for i in dev.identifiers if i[0] == DOMAIN}
+        if ids and not ids & valid_devices:
+            _LOGGER.info("Removing stale device %s", dev.name)
+            dev_reg.async_remove_device(dev.id)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Carburanti Economici from a config entry."""
     coordinator = CarburantiCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    _async_cleanup_stale(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await _async_register_lovelace_resource(hass)
 
